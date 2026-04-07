@@ -58,6 +58,13 @@ def normalize_scene_config(raw_config: dict[str, Any], source_path: Path) -> dic
     config["video"]["film_grain"] = int(config["video"]["film_grain"])
     config["video"]["vignette"] = bool(config["video"]["vignette"])
     config["video"]["time_lapse"] = bool(config["video"]["time_lapse"])
+    if "time_lapse_segments" in config["video"]:
+        segments = []
+        for segment in config["video"]["time_lapse_segments"]:
+            normalized_segment = deepcopy(segment)
+            normalized_segment["source_path"] = _resolve_source_value(segment["source"], source_path)
+            segments.append(normalized_segment)
+        config["video"]["time_lapse_segments"] = segments
     return config
 
 

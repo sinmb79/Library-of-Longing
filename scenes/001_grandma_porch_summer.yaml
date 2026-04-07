@@ -44,6 +44,15 @@ video:
   film_grain: 15
   vignette: true
   time_lapse: false
+  time_lapse_segments:
+    - source: "output/video/timelapse/grandma_dawn.png"
+      label: "dawn"
+    - source: "output/video/timelapse/grandma_afternoon.png"
+      label: "afternoon"
+    - source: "output/video/timelapse/grandma_evening.png"
+      label: "evening"
+    - source: "output/video/timelapse/grandma_night.png"
+      label: "night"
 
 metadata:
   title:

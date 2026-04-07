@@ -1,0 +1,310 @@
+{
+  "name": "Library of Longing Pipeline",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -760,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 9,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "schedule-weekly",
+      "name": "Schedule Weekly",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -760,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "command": "Get-ChildItem -Path scenes -Filter *.yaml | Sort-Object Name | Select-Object -ExpandProperty FullName"
+      },
+      "id": "read-scene-config",
+      "name": "Read Scene Config",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -500,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "command": "python scripts/comfyui_queue.py --scene \"{{$json[\"stdout\"]}}\" --output-dir output/video"
+      },
+      "id": "generate-visual-loop",
+      "name": "Generate Visual Loop",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -220,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 120
+      },
+      "id": "wait-for-comfyui",
+      "name": "Wait for ComfyUI",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        20,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "command": "python scripts/video_compositor.py --scene \"{{$node[\"Read Scene Config\"].json[\"stdout\"]}}\" --loop-clip output/video/{{$json[\"scene_slug\"]}}_loop.mp4 --output output/video/{{$json[\"scene_slug\"]}}_10h.mp4"
+      },
+      "id": "compose-video",
+      "name": "Compose Video",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        260,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "command": "python scripts/audio_mixer.py --scene \"{{$node[\"Read Scene Config\"].json[\"stdout\"]}}\" --output output/audio/{{$json[\"scene_slug\"]}}.wav"
+      },
+      "id": "mix-audio",
+      "name": "Mix Audio",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        500,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "command": "python scripts/assemble_final.py --scene \"{{$node[\"Read Scene Config\"].json[\"stdout\"]}}\" --video output/video/{{$json[\"scene_slug\"]}}_10h.mp4 --audio output/audio/{{$json[\"scene_slug\"]}}.wav --output output/final/{{$json[\"scene_slug\"]}}_final.mp4"
+      },
+      "id": "assemble-final",
+      "name": "Assemble Final",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        740,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "command": "python scripts/thumbnail_gen.py --scene \"{{$node[\"Read Scene Config\"].json[\"stdout\"]}}\" --base-image output/video/{{$json[\"scene_slug\"]}}_still.png --output output/thumbnails/{{$json[\"scene_slug\"]}}.jpg --write-template workflows/thumbnail.json"
+      },
+      "id": "generate-thumbnail",
+      "name": "Generate Thumbnail",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        980,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "command": "python scripts/youtube_upload.py --video output/final/{{$json[\"scene_slug\"]}}_final.mp4 --metadata output/final/{{$json[\"scene_slug\"]}}_final.youtube.json --thumbnail output/thumbnails/{{$json[\"scene_slug\"]}}.jpg"
+      },
+      "id": "upload-youtube",
+      "name": "Upload to YouTube",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1220,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "content": "Library of Longing pipeline completed for {{$json[\"scene_slug\"]}}."
+      },
+      "id": "notify-completion",
+      "name": "Notify Completion",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json[\"exitCode\"]}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-success",
+      "name": "IF Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1340,
+        -220
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Scene Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Weekly": {
+      "main": [
+        [
+          {
+            "node": "Read Scene Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Scene Config": {
+      "main": [
+        [
+          {
+            "node": "Generate Visual Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Visual Loop": {
+      "main": [
+        [
+          {
+            "node": "Wait for ComfyUI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for ComfyUI": {
+      "main": [
+        [
+          {
+            "node": "Compose Video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compose Video": {
+      "main": [
+        [
+          {
+            "node": "Mix Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mix Audio": {
+      "main": [
+        [
+          {
+            "node": "Assemble Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Final": {
+      "main": [
+        [
+          {
+            "node": "Generate Thumbnail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Thumbnail": {
+      "main": [
+        [
+          {
+            "node": "Upload to YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to YouTube": {
+      "main": [
+        [
+          {
+            "node": "Notify Completion",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "IF Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

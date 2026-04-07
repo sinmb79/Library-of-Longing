@@ -12,6 +12,7 @@ htmlcov/
 .env.*
 .venv/
 venv/
+.codex/
 
 # Generated project assets
 output/
