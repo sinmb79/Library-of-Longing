@@ -1,0 +1,77 @@
+scene:
+  id: "001"
+  slug: "grandma-porch-summer"
+
+visual:
+  prompt: >
+    korean traditional hanok maru wooden floor, old electric fan spinning,
+    summer afternoon sunlight through paper door, warm dust in the air,
+    watercolor background, Studio Ghibli style, nostalgic atmosphere, 4k
+  negative_prompt: >
+    realistic photo, modern furniture, city apartment, dark, gloomy,
+    neon light, text, watermark, low quality, blurry
+  style: "ghibli"
+  resolution: [3840, 2160]
+  loop_duration_sec: 8
+  motion_prompt: >
+    gentle fan spinning, light breeze moving curtain slightly,
+    dust particles drifting in sunlight
+
+audio:
+  layers:
+    room_tone:
+      source: "audio_sources/grandma_porch/room_tone.wav"
+      volume: 0.28
+    continuous:
+      source: "audio_sources/grandma_porch/fan_loop.wav"
+      volume: 0.42
+    periodic:
+      sources:
+        - "audio_sources/grandma_porch/cicada_near.wav"
+        - "audio_sources/grandma_porch/cicada_far.wav"
+      interval: [35, 90]
+      volume: 0.5
+    rare_events:
+      sources:
+        - "audio_sources/grandma_porch/sparrow.wav"
+        - "audio_sources/grandma_porch/ice_glass.wav"
+        - "audio_sources/grandma_porch/kitchen_clink.wav"
+      interval: [300, 900]
+      volume: 0.32
+
+video:
+  target_duration_hours: 10
+  film_grain: 15
+  vignette: true
+  time_lapse: false
+
+metadata:
+  title:
+    ko: "할머니 집 마루, 여름 — 매미와 선풍기 | 10시간"
+    en: "Grandmother's Porch, Summer — Cicadas & Old Fan | 10 Hours"
+  description:
+    ko: >
+      여름이면 할머니 집 마루에 누워 선풍기 바람과 매미 소리를 들었습니다.
+      집 안쪽 부엌에서 들려오던 기척까지 담아낸 10시간 앰비언스입니다.
+    en: >
+      Every summer I lay on grandmother's wooden porch, listening to the old fan
+      and the cicadas outside. This 10-hour ambience keeps even the faint kitchen
+      sounds that made the house feel alive.
+  tags:
+    - "ambience"
+    - "nostalgia"
+    - "korean"
+    - "summer"
+    - "cicadas"
+    - "fan"
+  storyline:
+    ko: >
+      여름이면 할머니 집에 갔다. 마루에 누우면 선풍기가 천장을 바라보며
+      돌았고, 밖에서는 매미가 쉬지 않고 울었다. 부엌에서 들려오던 작은
+      기척이 집 전체를 살아 있게 만들었다.
+    en: >
+      Every summer, I went to grandmother's house. The old fan turned toward the
+      ceiling while cicadas sang outside, and the faint sounds from the kitchen
+      made the whole house feel lived in.
+  culture: "KR"
+  season: "summer"

@@ -1,0 +1,283 @@
+{
+  "scene_path": "C:/Users/sinmb/workspace/Library-of-Londing/scenes/001_grandma_porch_summer.yaml",
+  "scene_id": "001",
+  "scene_slug": "grandma-porch-summer",
+  "image_seed": 101,
+  "video_seed": 202,
+  "image_workflow": {
+    "1": {
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": {
+        "ckpt_name": "sd_xl_base_1.0.safetensors"
+      }
+    },
+    "2": {
+      "class_type": "LoraLoader",
+      "inputs": {
+        "model": [
+          "1",
+          0
+        ],
+        "clip": [
+          "1",
+          1
+        ],
+        "lora_name": "ghibli_style_sdxl.safetensors",
+        "strength_model": 0.85,
+        "strength_clip": 0.85
+      }
+    },
+    "3": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "clip": [
+          "2",
+          1
+        ],
+        "text": "korean traditional hanok maru wooden floor, old electric fan spinning, summer afternoon sunlight through paper door, warm dust in the air, watercolor background, Studio Ghibli style, nostalgic atmosphere, 4k"
+      }
+    },
+    "4": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "clip": [
+          "2",
+          1
+        ],
+        "text": "realistic photo, modern furniture, city apartment, dark, gloomy, neon light, text, watermark, low quality, blurry"
+      }
+    },
+    "5": {
+      "class_type": "EmptyLatentImage",
+      "inputs": {
+        "width": 3840,
+        "height": 2160,
+        "batch_size": 1
+      }
+    },
+    "6": {
+      "class_type": "KSampler",
+      "inputs": {
+        "model": [
+          "2",
+          0
+        ],
+        "positive": [
+          "3",
+          0
+        ],
+        "negative": [
+          "4",
+          0
+        ],
+        "latent_image": [
+          "5",
+          0
+        ],
+        "seed": 101,
+        "steps": 30,
+        "cfg": 7.0,
+        "sampler_name": "dpmpp_2m_sde",
+        "scheduler": "karras",
+        "denoise": 1.0
+      }
+    },
+    "7": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": [
+          "6",
+          0
+        ],
+        "vae": [
+          "1",
+          2
+        ]
+      }
+    },
+    "8": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "images": [
+          "7",
+          0
+        ],
+        "filename_prefix": "001_grandma-porch-summer_still"
+      }
+    }
+  },
+  "video_workflow": {
+    "1": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": "__UPLOADED_IMAGE__"
+      }
+    },
+    "2": {
+      "class_type": "WanVideoModelLoader",
+      "inputs": {
+        "model": "LowNoise\\Wan2.2-T2V-A14B-LowNoise-Q4_K_M.gguf",
+        "base_precision": "fp16",
+        "quantization": "disabled",
+        "load_device": "offload_device",
+        "attention_mode": "sdpa",
+        "block_swap_args": [
+          "6",
+          0
+        ]
+      }
+    },
+    "3": {
+      "class_type": "LoadWanVideoT5TextEncoder",
+      "inputs": {
+        "model_name": "split_files\\text_encoders\\umt5_xxl_fp16.safetensors",
+        "precision": "bf16",
+        "load_device": "offload_device"
+      }
+    },
+    "4": {
+      "class_type": "WanVideoVAELoader",
+      "inputs": {
+        "model_name": "split_files\\vae\\wan_2.1_vae.safetensors",
+        "precision": "bf16"
+      }
+    },
+    "5": {
+      "class_type": "WanVideoTextEncode",
+      "inputs": {
+        "t5": [
+          "3",
+          0
+        ],
+        "positive_prompt": "korean traditional hanok maru wooden floor, old electric fan spinning, summer afternoon sunlight through paper door, warm dust in the air, watercolor background, Studio Ghibli style, nostalgic atmosphere, 4k. Motion guidance: gentle fan spinning, light breeze moving curtain slightly, dust particles drifting in sunlight",
+        "negative_prompt": "realistic photo, modern furniture, city apartment, dark, gloomy, neon light, text, watermark, low quality, blurry, static frame, flicker, jitter, warped anatomy, broken motion, text, watermark",
+        "force_offload": true,
+        "device": "gpu"
+      }
+    },
+    "6": {
+      "class_type": "WanVideoBlockSwap",
+      "inputs": {
+        "blocks_to_swap": 20,
+        "offload_txt_emb": false,
+        "offload_img_emb": false
+      }
+    },
+    "7": {
+      "class_type": "WanVideoSetAttentionModeOverride",
+      "inputs": {
+        "model": [
+          "2",
+          0
+        ],
+        "attention_mode": "sageattn",
+        "start_step": 0,
+        "end_step": 10000,
+        "verbose": false
+      }
+    },
+    "8": {
+      "class_type": "WanVideoImageToVideoEncode",
+      "inputs": {
+        "width": 848,
+        "height": 480,
+        "num_frames": 132,
+        "noise_aug_strength": 0.02,
+        "start_latent_strength": 1.0,
+        "end_latent_strength": 1.0,
+        "force_offload": true,
+        "vae": [
+          "4",
+          0
+        ],
+        "start_image": [
+          "1",
+          0
+        ],
+        "end_image": [
+          "1",
+          0
+        ],
+        "fun_or_fl2v_model": true,
+        "tiled_vae": false
+      }
+    },
+    "9": {
+      "class_type": "WanVideoTeaCache",
+      "inputs": {
+        "rel_l1_thresh": 0.25,
+        "start_step": 1,
+        "end_step": -1,
+        "cache_device": "offload_device",
+        "use_coefficients": true
+      }
+    },
+    "10": {
+      "class_type": "WanVideoSampler",
+      "inputs": {
+        "model": [
+          "7",
+          0
+        ],
+        "text_embeds": [
+          "5",
+          0
+        ],
+        "image_embeds": [
+          "8",
+          0
+        ],
+        "cache_args": [
+          "9",
+          0
+        ],
+        "steps": 20,
+        "cfg": 6.0,
+        "shift": 5,
+        "seed": 202,
+        "force_offload": true,
+        "scheduler": "dpm++_sde",
+        "riflex_freq_index": 0,
+        "denoise_strength": 1.0,
+        "batched_cfg": false
+      }
+    },
+    "11": {
+      "class_type": "VHS_VideoCombine",
+      "inputs": {
+        "images": [
+          "12",
+          0
+        ],
+        "frame_rate": 16,
+        "loop_count": 0,
+        "filename_prefix": "001_grandma-porch-summer_loop",
+        "format": "video/h264-mp4",
+        "pix_fmt": "yuv420p",
+        "crf": 18,
+        "save_metadata": true,
+        "trim_to_audio": false,
+        "pingpong": false,
+        "save_output": true
+      }
+    },
+    "12": {
+      "class_type": "WanVideoDecode",
+      "inputs": {
+        "vae": [
+          "4",
+          0
+        ],
+        "samples": [
+          "10",
+          0
+        ],
+        "enable_vae_tiling": false,
+        "tile_x": 272,
+        "tile_y": 272,
+        "tile_stride_x": 144,
+        "tile_stride_y": 128
+      }
+    }
+  }
+}
