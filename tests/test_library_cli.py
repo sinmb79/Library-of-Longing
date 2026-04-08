@@ -256,3 +256,187 @@ def test_populate_scene_audio_sources_prefers_stable_for_specific_sfx(monkeypatc
     manifest = json.loads(written_manifest.read_text(encoding="utf-8"))
 
     assert manifest["sources"]["audio_sources/grandma_porch/ice_glass.wav"]["tier"] == "stable_audio"
+
+
+def test_populate_scene_audio_sources_respects_explicit_sourcing_hints(monkeypatch, tmp_path: Path) -> None:
+    scene_path = _build_scene(tmp_path / "scene.yaml")
+    scene = yaml.safe_load(scene_path.read_text(encoding="utf-8"))
+    scene["audio"]["layers"]["room_tone"]["sourcing"] = {"tier": "procedural", "type": "hum", "params": {"base_freq": 55}}
+    scene["audio"]["layers"]["periodic"]["sourcing"] = {
+        "tier": "freesound_cc0",
+        "queries": ["summer cicada chorus", "far cicada dusk"],
+        "min_duration": 12,
+        "max_duration": 48,
+    }
+    scene["audio"]["layers"]["rare_events"]["sourcing"] = {
+        "tier": "stable_audio",
+        "queries": ["sparrow single chirp", "ice in glass clink"],
+        "prompt": "isolated household detail, no music",
+    }
+    scene_path.write_text(yaml.safe_dump(scene, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+    freesound_calls: list[tuple[str, dict]] = []
+
+    def _search_cc0(query: str, **kwargs):
+        freesound_calls.append((query, kwargs))
+        return [
+            {
+                "sound_id": 777,
+                "name": query,
+                "author": "recordist",
+                "license": "Creative Commons 0",
+                "url": "https://freesound.org/s/777/",
+                "duration": 21.0,
+            }
+        ]
+
+    monkeypatch.setattr(
+        "scripts.audio_sourcing.library.write_procedural_wav",
+        lambda sound_type, output_path, **kwargs: _write_bytes(output_path, payload=f"proc:{sound_type}".encode()),
+    )
+    monkeypatch.setattr("scripts.audio_sourcing.library.search_cc0", _search_cc0)
+    monkeypatch.setattr(
+        "scripts.audio_sourcing.library.download_sound",
+        lambda sound_id, output_path, **kwargs: _write_bytes(output_path, payload=b"freesound"),
+    )
+    monkeypatch.setattr("scripts.audio_sourcing.library.list_catalog", lambda **kwargs: [])
+    monkeypatch.setattr("scripts.audio_sourcing.library.search_archive", lambda query, **kwargs: [])
+    monkeypatch.setattr(
+        "scripts.audio_sourcing.library.generate_sfx",
+        lambda prompt, duration, seed, output_path, **kwargs: _write_bytes(output_path, payload=prompt.encode("utf-8")),
+    )
+
+    written_manifest = populate_scene_audio_sources(scene_path, manifest_path=tmp_path / "audio_sources" / "MANIFEST.json", seed=17)
+    manifest = json.loads(written_manifest.read_text(encoding="utf-8"))
+
+    assert manifest["sources"]["audio_sources/grandma_porch/room_tone.wav"]["generator"] == "hum"
+    assert manifest["sources"]["audio_sources/grandma_porch/cicada_near.wav"]["tier"] == "freesound_cc0"
+    assert manifest["sources"]["audio_sources/grandma_porch/cicada_far.wav"]["tier"] == "freesound_cc0"
+    assert manifest["sources"]["audio_sources/grandma_porch/sparrow.wav"]["tier"] == "stable_audio"
+    assert manifest["sources"]["audio_sources/grandma_porch/sparrow.wav"]["prompt"] == "isolated household detail, no music"
+    assert freesound_calls[0][0] == "summer cicada chorus"
+    assert freesound_calls[0][1]["min_duration"] == 12
+    assert freesound_calls[1][0] == "far cicada dusk"
+    assert freesound_calls[1][1]["max_duration"] == 48
+
+
+def test_populate_scene_audio_sources_dry_run_does_not_write_files(monkeypatch, tmp_path: Path) -> None:
+    scene_path = _build_scene(tmp_path / "scene.yaml")
+
+    monkeypatch.setattr("scripts.audio_sourcing.library.write_procedural_wav", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no writes in dry-run")))
+    monkeypatch.setattr(
+        "scripts.audio_sourcing.library.search_cc0",
+        lambda query, **kwargs: [
+            {
+                "sound_id": 10,
+                "name": query,
+                "author": "recordist",
+                "license": "Creative Commons 0",
+                "url": "https://freesound.org/s/10/",
+                "duration": 18.0,
+            }
+        ],
+    )
+    monkeypatch.setattr("scripts.audio_sourcing.library.download_sound", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("download should not happen")))
+    monkeypatch.setattr("scripts.audio_sourcing.library.list_catalog", lambda **kwargs: [])
+    monkeypatch.setattr("scripts.audio_sourcing.library.search_archive", lambda query, **kwargs: [])
+    monkeypatch.setattr("scripts.audio_sourcing.library.generate_sfx", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("stable should not write in dry-run")))
+
+    manifest = populate_scene_audio_sources(
+        scene_path,
+        manifest_path=tmp_path / "audio_sources" / "MANIFEST.json",
+        seed=21,
+        dry_run=True,
+    )
+
+    assert manifest["dry_run"] is True
+    assert manifest["sources"]["audio_sources/grandma_porch/room_tone.wav"]["tier"] == "procedural"
+    assert not (tmp_path / "audio_sources" / "MANIFEST.json").exists()
+    assert not any((tmp_path / "audio_sources").rglob("*.wav"))
+
+
+def test_populate_scene_audio_sources_force_rebuilds_existing_files(monkeypatch, tmp_path: Path) -> None:
+    scene_path = _build_scene(tmp_path / "scene.yaml")
+    existing = tmp_path / "audio_sources" / "grandma_porch" / "room_tone.wav"
+    _write_valid_wav(existing)
+
+    called: list[str] = []
+
+    def _write_proc(sound_type: str, output_path: Path, **kwargs):
+        called.append(sound_type)
+        return _write_bytes(output_path, payload=f"proc:{sound_type}".encode())
+
+    monkeypatch.setattr("scripts.audio_sourcing.library.write_procedural_wav", _write_proc)
+    monkeypatch.setattr("scripts.audio_sourcing.library.search_cc0", lambda query, **kwargs: [])
+    monkeypatch.setattr("scripts.audio_sourcing.library.list_catalog", lambda **kwargs: [])
+    monkeypatch.setattr("scripts.audio_sourcing.library.search_archive", lambda query, **kwargs: [])
+    monkeypatch.setattr(
+        "scripts.audio_sourcing.library.generate_sfx",
+        lambda prompt, duration, seed, output_path, **kwargs: _write_bytes(output_path, payload=b"stable"),
+    )
+
+    manifest_path = populate_scene_audio_sources(
+        scene_path,
+        manifest_path=tmp_path / "audio_sources" / "MANIFEST.json",
+        seed=5,
+        force=True,
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert manifest["sources"]["audio_sources/grandma_porch/room_tone.wav"]["tier"] == "procedural"
+    assert "room_tone" in called
+
+
+def test_populate_scene_audio_sources_explicit_freesound_retries_inferred_query(monkeypatch, tmp_path: Path) -> None:
+    scene_path = _build_scene(tmp_path / "scene.yaml")
+    scene = yaml.safe_load(scene_path.read_text(encoding="utf-8"))
+    scene["audio"]["layers"]["periodic"]["sourcing"] = {
+        "tier": "freesound_cc0",
+        "queries": ["too specific no match"],
+        "min_duration": 10,
+        "max_duration": 60,
+    }
+    scene_path.write_text(yaml.safe_dump(scene, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+    calls: list[str] = []
+
+    def _search_cc0(query: str, **kwargs):
+        calls.append(query)
+        if query == "cicada near":
+            return [
+                {
+                    "sound_id": 824924,
+                    "name": "Cicadas W breeze",
+                    "author": "Colin.LeBlanc.Sound",
+                    "license": "Creative Commons 0",
+                    "url": "https://freesound.org/s/824924/",
+                    "duration": 20.0,
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(
+        "scripts.audio_sourcing.library.write_procedural_wav",
+        lambda sound_type, output_path, **kwargs: _write_bytes(output_path, payload=f"proc:{sound_type}".encode()),
+    )
+    monkeypatch.setattr("scripts.audio_sourcing.library.search_cc0", _search_cc0)
+    monkeypatch.setattr(
+        "scripts.audio_sourcing.library.download_sound",
+        lambda sound_id, output_path, **kwargs: _write_bytes(output_path, payload=b"freesound"),
+    )
+    monkeypatch.setattr("scripts.audio_sourcing.library.list_catalog", lambda **kwargs: [])
+    monkeypatch.setattr("scripts.audio_sourcing.library.search_archive", lambda query, **kwargs: [])
+    monkeypatch.setattr(
+        "scripts.audio_sourcing.library.generate_sfx",
+        lambda prompt, duration, seed, output_path, **kwargs: _write_bytes(output_path, payload=b"stable"),
+    )
+
+    manifest_path = populate_scene_audio_sources(
+        scene_path,
+        manifest_path=tmp_path / "audio_sources" / "MANIFEST.json",
+        seed=33,
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert manifest["sources"]["audio_sources/grandma_porch/cicada_near.wav"]["tier"] == "freesound_cc0"
+    assert calls[:2] == ["too specific no match", "cicada near"]

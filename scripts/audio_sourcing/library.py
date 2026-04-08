@@ -16,6 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from scripts.audio_sourcing.archive_org_fetcher import download_audio_files as download_archive_audio_files
+from scripts.audio_sourcing.archive_org_fetcher import get_metadata as get_archive_metadata
 from scripts.audio_sourcing.archive_org_fetcher import search as search_archive
 from scripts.audio_sourcing.freesound_fetcher import download_sound, search_cc0
 from scripts.audio_sourcing.nps_fetcher import download as download_nps
@@ -26,6 +27,7 @@ from scripts.scene_config import load_scene_config
 
 
 DEFAULT_MANIFEST_PATH = PROJECT_ROOT / "audio_sources" / "MANIFEST.json"
+AUTO_TIER = "auto"
 BIOLOGICAL_KEYWORDS = {
     "sparrow",
     "robin",
@@ -65,14 +67,40 @@ def _relative_path(path: Path) -> str:
         return path.resolve().as_posix()
 
 
-def _layer_targets(scene_config: dict[str, Any]) -> list[tuple[str, Path]]:
+def _layer_targets(scene_config: dict[str, Any]) -> list[dict[str, Any]]:
     layers = scene_config["audio"]["layers"]
-    targets: list[tuple[str, Path]] = [
-        ("room_tone", Path(layers["room_tone"]["source_path"])),
-        ("continuous", Path(layers["continuous"]["source_path"])),
+    targets: list[dict[str, Any]] = [
+        {
+            "layer_name": "room_tone",
+            "target_path": Path(layers["room_tone"]["source_path"]),
+            "layer_config": layers["room_tone"],
+            "source_index": None,
+        },
+        {
+            "layer_name": "continuous",
+            "target_path": Path(layers["continuous"]["source_path"]),
+            "layer_config": layers["continuous"],
+            "source_index": None,
+        },
     ]
-    targets.extend(("periodic", Path(path)) for path in layers["periodic"]["source_paths"])
-    targets.extend(("rare_events", Path(path)) for path in layers["rare_events"]["source_paths"])
+    targets.extend(
+        {
+            "layer_name": "periodic",
+            "target_path": Path(path),
+            "layer_config": layers["periodic"],
+            "source_index": index,
+        }
+        for index, path in enumerate(layers["periodic"]["source_paths"])
+    )
+    targets.extend(
+        {
+            "layer_name": "rare_events",
+            "target_path": Path(path),
+            "layer_config": layers["rare_events"],
+            "source_index": index,
+        }
+        for index, path in enumerate(layers["rare_events"]["source_paths"])
+    )
     return targets
 
 
@@ -80,23 +108,50 @@ def _infer_query(target_path: Path) -> str:
     return target_path.stem.replace("_", " ").replace("-", " ").strip().lower()
 
 
+def _sourcing_config(layer_config: dict[str, Any]) -> dict[str, Any]:
+    return dict(layer_config.get("sourcing") or {})
+
+
+def _pick_query(default_query: str, sourcing: dict[str, Any], source_index: int | None) -> str:
+    queries = [str(item).strip().lower() for item in sourcing.get("queries", []) if str(item).strip()]
+    if not queries:
+        return default_query
+    if source_index is not None and 0 <= source_index < len(queries):
+        return queries[source_index]
+    return queries[0]
+
+
+def _query_candidates(default_query: str, sourcing: dict[str, Any], source_index: int | None) -> list[str]:
+    primary = _pick_query(default_query, sourcing, source_index)
+    candidates = [primary]
+    if primary != default_query:
+        candidates.append(default_query)
+    return candidates
+
+
+def _pick_duration_range(sourcing: dict[str, Any]) -> tuple[float | None, float | None]:
+    return sourcing.get("min_duration"), sourcing.get("max_duration")
+
+
 def _is_biological(query: str) -> bool:
     return any(keyword in query for keyword in BIOLOGICAL_KEYWORDS)
 
 
-def _procedural_type(layer_name: str, query: str) -> str | None:
+def _procedural_type(layer_name: str, query: str, sourcing: dict[str, Any]) -> str | None:
+    if sourcing.get("type"):
+        return str(sourcing["type"])
     if layer_name == "room_tone":
         return "room_tone"
-    if layer_name == "continuous" and "fan" in query:
-        return "fan"
+    if layer_name != "continuous":
+        return None
     for keyword, generator in PROCEDURAL_MAP.items():
         if keyword in query:
             return generator
     return None
 
 
-def _stable_prompt(query: str, layer_name: str) -> str:
-    return f"clean isolated {query.replace('_', ' ')}, high quality ambient detail, no music, no voice"
+def _stable_prompt(query: str, sourcing: dict[str, Any]) -> str:
+    return str(sourcing.get("prompt") or f"clean isolated {query.replace('_', ' ')}, high quality ambient detail, no music, no voice")
 
 
 def _prefer_stable(layer_name: str, query: str) -> bool:
@@ -138,13 +193,15 @@ def _record_entry(
     *,
     tier: str,
     metadata: dict[str, Any],
+    dry_run: bool,
 ) -> None:
     key = _relative_path(target_path)
-    manifest["sources"][key] = {
-        "tier": tier,
-        **metadata,
-        "sha256": _sha256(target_path),
-    }
+    entry = {"tier": tier, **metadata}
+    if dry_run:
+        entry["planned"] = True
+    elif target_path.exists():
+        entry["sha256"] = _sha256(target_path)
+    manifest["sources"][key] = entry
 
 
 def _is_usable_audio(path: Path) -> bool:
@@ -157,12 +214,20 @@ def _is_usable_audio(path: Path) -> bool:
     return info.frames > 0 and info.samplerate > 0 and info.channels >= 1
 
 
-def _acquire_with_freesound(query: str, target_path: Path) -> dict[str, Any] | None:
-    results = search_cc0(query, min_duration=5, max_duration=60, max_results=3)
+def _acquire_with_freesound(
+    query: str,
+    target_path: Path,
+    *,
+    min_duration: float | None = 5,
+    max_duration: float | None = 60,
+    dry_run: bool,
+) -> dict[str, Any] | None:
+    results = search_cc0(query, min_duration=min_duration, max_duration=max_duration, max_results=3)
     if not results:
         return None
     selected = results[0]
-    download_sound(selected["sound_id"], target_path)
+    if not dry_run:
+        download_sound(selected["sound_id"], target_path)
     return {
         "license": selected["license"],
         "origin_url": selected["url"],
@@ -172,13 +237,14 @@ def _acquire_with_freesound(query: str, target_path: Path) -> dict[str, Any] | N
     }
 
 
-def _acquire_with_nps(query: str, target_path: Path) -> dict[str, Any] | None:
+def _acquire_with_nps(query: str, target_path: Path, *, dry_run: bool) -> dict[str, Any] | None:
     entries = list_catalog(rate_limit_sec=0.0)
     match = _find_nps_match(query, entries)
     if match is None:
         return None
-    downloaded = download_nps(match, target_path.parent, output_filename=target_path.name)
-    _move_into_place(downloaded, target_path)
+    if not dry_run:
+        downloaded = download_nps(match, target_path.parent, output_filename=target_path.name)
+        _move_into_place(downloaded, target_path)
     return {
         "license": "US Public Domain",
         "origin_url": match["page_url"],
@@ -188,9 +254,20 @@ def _acquire_with_nps(query: str, target_path: Path) -> dict[str, Any] | None:
     }
 
 
-def _acquire_with_archive(query: str, target_path: Path) -> dict[str, Any] | None:
+def _acquire_with_archive(query: str, target_path: Path, *, dry_run: bool) -> dict[str, Any] | None:
     docs = search_archive(query, collection=None, max_results=3)
     for doc in docs:
+        if dry_run:
+            metadata = get_archive_metadata(doc["identifier"])
+            if not metadata["allowed_license"]:
+                continue
+            return {
+                "license": metadata["license"],
+                "origin_url": metadata["origin_url"],
+                "author": metadata["creator"],
+                "original_title": metadata["title"],
+                "item_id": doc["identifier"],
+            }
         try:
             downloaded_paths = download_archive_audio_files(
                 doc["identifier"],
@@ -214,29 +291,124 @@ def _acquire_with_archive(query: str, target_path: Path) -> dict[str, Any] | Non
     return None
 
 
-def _acquire_with_procedural(layer_name: str, query: str, target_path: Path, seed: int) -> dict[str, Any] | None:
-    generator = _procedural_type(layer_name, query)
+def _acquire_with_procedural(
+    layer_name: str,
+    query: str,
+    target_path: Path,
+    seed: int,
+    *,
+    sourcing: dict[str, Any],
+    dry_run: bool,
+) -> dict[str, Any] | None:
+    generator = _procedural_type(layer_name, query, sourcing)
     if generator is None:
         return None
-    write_procedural_wav(generator, target_path, duration=30.0, seed=seed)
+    params = dict(sourcing.get("params") or {})
+    duration = float(params.pop("duration", 30.0))
+    if not dry_run:
+        write_procedural_wav(generator, target_path, duration=duration, seed=seed, **params)
     return {
         "generator": generator,
+        "params": params,
         "license": "Synthetic / Internal",
         "origin_url": "",
-        "duration_sec": 30.0,
+        "duration_sec": duration,
         "seed": seed,
     }
 
 
-def _acquire_with_stable(query: str, target_path: Path, seed: int) -> dict[str, Any]:
-    generate_sfx(prompt=_stable_prompt(query, "rare_events"), duration=8.0, seed=seed, output_path=target_path)
+def _acquire_with_stable(
+    query: str,
+    target_path: Path,
+    seed: int,
+    *,
+    sourcing: dict[str, Any],
+    dry_run: bool,
+) -> dict[str, Any]:
+    params = dict(sourcing.get("params") or {})
+    duration = float(params.pop("duration", 8.0))
+    prompt = _stable_prompt(query, sourcing)
+    if not dry_run:
+        generate_sfx(prompt=prompt, duration=duration, seed=seed, output_path=target_path)
     return {
         "license": "Synthetic / Internal",
         "origin_url": "",
-        "prompt": _stable_prompt(query, "rare_events"),
+        "prompt": prompt,
         "seed": seed,
-        "duration_sec": 8.0,
+        "duration_sec": duration,
     }
+
+
+def _acquire_explicit(
+    layer_name: str,
+    query: str,
+    default_query: str,
+    target_path: Path,
+    seed: int,
+    *,
+    sourcing: dict[str, Any],
+    source_index: int | None,
+    dry_run: bool,
+) -> tuple[str, dict[str, Any] | None]:
+    explicit_tier = str(sourcing.get("tier") or AUTO_TIER)
+    min_duration, max_duration = _pick_duration_range(sourcing)
+    if explicit_tier == "procedural":
+        return "procedural", _acquire_with_procedural(layer_name, query, target_path, seed, sourcing=sourcing, dry_run=dry_run)
+    if explicit_tier == "freesound_cc0":
+        for candidate in _query_candidates(default_query, sourcing, source_index):
+            metadata = _acquire_with_freesound(candidate, target_path, min_duration=min_duration, max_duration=max_duration, dry_run=dry_run)
+            if metadata is not None:
+                return "freesound_cc0", metadata
+        return "freesound_cc0", None
+    if explicit_tier == "nps_pd":
+        for candidate in _query_candidates(default_query, sourcing, source_index):
+            metadata = _acquire_with_nps(candidate, target_path, dry_run=dry_run)
+            if metadata is not None:
+                return "nps_pd", metadata
+        return "nps_pd", None
+    if explicit_tier == "archive_pd":
+        for candidate in _query_candidates(default_query, sourcing, source_index):
+            metadata = _acquire_with_archive(candidate, target_path, dry_run=dry_run)
+            if metadata is not None:
+                return "archive_pd", metadata
+        return "archive_pd", None
+    if explicit_tier == "stable_audio":
+        return "stable_audio", _acquire_with_stable(query, target_path, seed, sourcing=sourcing, dry_run=dry_run)
+    return AUTO_TIER, None
+
+
+def _acquire_auto(
+    layer_name: str,
+    query: str,
+    target_path: Path,
+    seed: int,
+    *,
+    sourcing: dict[str, Any],
+    dry_run: bool,
+) -> tuple[str, dict[str, Any]]:
+    min_duration, max_duration = _pick_duration_range(sourcing)
+
+    procedural_metadata = _acquire_with_procedural(layer_name, query, target_path, seed, sourcing=sourcing, dry_run=dry_run)
+    if procedural_metadata is not None:
+        return "procedural", procedural_metadata
+
+    if _prefer_stable(layer_name, query):
+        return "stable_audio", _acquire_with_stable(query, target_path, seed, sourcing=sourcing, dry_run=dry_run)
+
+    freesound_metadata = _acquire_with_freesound(query, target_path, min_duration=min_duration, max_duration=max_duration, dry_run=dry_run)
+    if freesound_metadata is not None:
+        return "freesound_cc0", freesound_metadata
+
+    if _is_biological(query):
+        nps_metadata = _acquire_with_nps(query, target_path, dry_run=dry_run)
+        if nps_metadata is not None:
+            return "nps_pd", nps_metadata
+
+    archive_metadata = _acquire_with_archive(query, target_path, dry_run=dry_run)
+    if archive_metadata is not None:
+        return "archive_pd", archive_metadata
+
+    return "stable_audio", _acquire_with_stable(query, target_path, seed, sourcing=sourcing, dry_run=dry_run)
 
 
 def populate_scene_audio_sources(
@@ -244,59 +416,63 @@ def populate_scene_audio_sources(
     *,
     manifest_path: Path = DEFAULT_MANIFEST_PATH,
     seed: int = 42,
-) -> Path:
+    dry_run: bool = False,
+    force: bool = False,
+) -> Path | dict[str, Any]:
     scene_config = load_scene_config(scene_path)
     manifest = {
         "scene_id": scene_config["scene"]["id"],
         "generated_at": datetime.now(UTC).isoformat(),
+        "dry_run": dry_run,
         "sources": {},
     }
     per_target_seed = seed
-    for layer_name, target_path in _layer_targets(scene_config):
+
+    for target in _layer_targets(scene_config):
+        layer_name = target["layer_name"]
+        target_path = target["target_path"]
+        layer_config = target["layer_config"]
+        source_index = target["source_index"]
         relative_key = _relative_path(target_path)
-        if _is_usable_audio(target_path):
+
+        if _is_usable_audio(target_path) and not force:
             _record_entry(
                 manifest,
                 target_path,
                 tier="local_existing",
                 metadata={"license": "Local File", "origin_url": "", "author": "", "original_title": target_path.name},
+                dry_run=dry_run,
             )
             continue
 
-        query = _infer_query(target_path)
-        metadata: dict[str, Any] | None = None
-        tier = ""
+        sourcing = _sourcing_config(layer_config)
+        default_query = _infer_query(target_path)
+        query = _pick_query(default_query, sourcing, source_index)
+        tier, metadata = _acquire_explicit(
+            layer_name,
+            query,
+            default_query,
+            target_path,
+            per_target_seed,
+            sourcing=sourcing,
+            source_index=source_index,
+            dry_run=dry_run,
+        )
+        if metadata is None:
+            tier, metadata = _acquire_auto(
+                layer_name,
+                query,
+                target_path,
+                per_target_seed,
+                sourcing=sourcing,
+                dry_run=dry_run,
+            )
 
-        procedural_metadata = _acquire_with_procedural(layer_name, query, target_path, seed=per_target_seed)
-        if procedural_metadata is not None:
-            metadata = procedural_metadata
-            tier = "procedural"
-        elif _prefer_stable(layer_name, query):
-            metadata = _acquire_with_stable(query, target_path, seed=per_target_seed)
-            tier = "stable_audio"
-        else:
-            freesound_metadata = _acquire_with_freesound(query, target_path)
-            if freesound_metadata is not None:
-                metadata = freesound_metadata
-                tier = "freesound_cc0"
-            else:
-                if _is_biological(query):
-                    nps_metadata = _acquire_with_nps(query, target_path)
-                    if nps_metadata is not None:
-                        metadata = nps_metadata
-                        tier = "nps_pd"
-                if metadata is None:
-                    archive_metadata = _acquire_with_archive(query, target_path)
-                    if archive_metadata is not None:
-                        metadata = archive_metadata
-                        tier = "archive_pd"
-                if metadata is None:
-                    metadata = _acquire_with_stable(query, target_path, seed=per_target_seed)
-                    tier = "stable_audio"
-
-        _record_entry(manifest, target_path, tier=tier, metadata=metadata or {})
+        _record_entry(manifest, target_path, tier=tier, metadata=metadata, dry_run=dry_run)
         per_target_seed += 1
 
+    if dry_run:
+        return manifest
     return _write_manifest(manifest_path, manifest)
 
 
@@ -305,12 +481,26 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scene", type=Path, required=True, help="Scene YAML file.")
     parser.add_argument("--manifest-path", type=Path, default=DEFAULT_MANIFEST_PATH, help="Manifest output path.")
     parser.add_argument("--seed", type=int, default=42, help="Base seed for procedural and Stable Audio generation.")
+    parser.add_argument("--dry-run", action="store_true", help="Resolve sourcing decisions without writing files.")
+    parser.add_argument("--force", action="store_true", help="Rebuild sources even if valid local files already exist.")
+    parser.add_argument("--pretty", action="store_true", help="Pretty-print dry-run JSON output.")
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
-    print(populate_scene_audio_sources(args.scene, manifest_path=args.manifest_path, seed=args.seed))
+    result = populate_scene_audio_sources(
+        args.scene,
+        manifest_path=args.manifest_path,
+        seed=args.seed,
+        dry_run=args.dry_run,
+        force=args.force,
+    )
+    if args.dry_run:
+        indent = 2 if args.pretty or args.dry_run else None
+        print(json.dumps(result, ensure_ascii=False, indent=indent))
+        return
+    print(result)
 
 
 if __name__ == "__main__":

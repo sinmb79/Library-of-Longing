@@ -150,6 +150,10 @@ $defs:
         type: number
         minimum: 0
         maximum: 1
+      sourcing:
+        $ref: "#/$defs/sourcingHints"
+      gen:
+        $ref: "#/$defs/sourcingHints"
   eventLayer:
     type: object
     additionalProperties: false
@@ -173,3 +177,41 @@ $defs:
         type: number
         minimum: 0
         maximum: 1
+      sourcing:
+        $ref: "#/$defs/sourcingHints"
+      gen:
+        $ref: "#/$defs/sourcingHints"
+  sourcingHints:
+    type: object
+    additionalProperties: false
+    properties:
+      tier:
+        type: string
+        enum:
+          - auto
+          - freesound_cc0
+          - nps_pd
+          - archive_pd
+          - procedural
+          - stable_audio
+      type:
+        type: string
+        minLength: 1
+      queries:
+        type: array
+        minItems: 1
+        items:
+          type: string
+          minLength: 1
+      min_duration:
+        type: number
+        minimum: 0
+      max_duration:
+        type: number
+        minimum: 0
+      prompt:
+        type: string
+        minLength: 1
+      params:
+        type: object
+        additionalProperties: true

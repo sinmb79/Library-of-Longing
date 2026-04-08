@@ -134,6 +134,12 @@ audio:
     room_tone:
       source: "audio_sources/grandma_porch/room_tone.wav"
       volume: 0.28
+      sourcing:
+        tier: "procedural"
+        type: "room_tone"
+        params:
+          base_freq: 60
+          bandwidth: 200
     continuous:
       source: "audio_sources/grandma_porch/fan_loop.wav"
       volume: 0.42
@@ -277,7 +283,7 @@ video:
 
 - 기본 동작은 `dry_run`
 - 실제 업로드는 `--live`일 때만 수행
-- OAuth client secret/token은 프로젝트 내부가 아니라 `C:\Users\sinmb\key`에서 읽음
+- OAuth client secret/token은 프로젝트 내부가 아니라 `%USERPROFILE%\key` 같은 외부 키 디렉터리에서 읽음
 
 ### 8. `n8n/library_of_longing_pipeline.json`
 
@@ -318,7 +324,8 @@ python scripts/audio_sourcing/freesound_fetcher.py cache --sound-id 824924 --out
 python scripts/audio_sourcing/nps_fetcher.py --list
 python scripts/audio_sourcing/archive_org_fetcher.py --query "summer cicada forest" --max-results 3
 python scripts/audio_sourcing/procedural_gen.py --type fan --duration 3 --output audio_sources/smoke/fan_loop.wav --seed 21
-python scripts/audio_sourcing/library.py --scene scenes/001_grandma_porch_summer.yaml
+python scripts/audio_sourcing/library.py --scene scenes/001_grandma_porch_summer.yaml --dry-run --pretty
+python scripts/audio_sourcing/library.py --scene scenes/001_grandma_porch_summer.yaml --force --manifest-path audio_sources/MANIFEST.json
 ```
 
 ## 테스트 및 검증
@@ -327,7 +334,7 @@ python scripts/audio_sourcing/library.py --scene scenes/001_grandma_porch_summer
 
 | 항목 | 결과 |
 |------|------|
-| 전체 테스트 | `pytest tests -v` 기준 `47 passed` |
+| 전체 테스트 | `pytest tests -v` 기준 `52 passed` |
 | C3 스모크 | 실제 FFmpeg 2초 합성 확인 |
 | C4 스모크 | 실제 mux + metadata JSON 생성 확인 |
 | C5 스모크 | 실제 JPG 썸네일 생성 확인 |
@@ -402,14 +409,14 @@ Library of Longing is a production pipeline for long-form ambience videos. A sin
 | `scripts/audio_sourcing/archive_org_fetcher.py` | Search Archive.org, verify open licenses from metadata, and download audio files |
 | `scripts/audio_sourcing/procedural_gen.py` | Generate loopable mechanical ambience layers such as fan, hum, wind, and room tone |
 | `scripts/audio_sourcing/stable_audio_gen.py` | Generate rare fallback effects with Stable Audio Open |
-| `scripts/audio_sourcing/library.py` | Populate a scene's missing audio files across all sourcing tiers and write a unified manifest |
+| `scripts/audio_sourcing/library.py` | Populate a scene's missing audio files across all sourcing tiers, respect scene-level sourcing hints, and write a unified manifest |
 | `n8n/library_of_longing_pipeline.json` | Orchestrate the end-to-end flow |
 
 ### Verification
 
 The repository currently passes:
 
-- `pytest tests -v` with `47 passed`
+- `pytest tests -v` with `52 passed`
 - real FFmpeg smoke runs for composition and final assembly
 - real thumbnail JPG rendering
 - real YouTube dry-run JSON output
@@ -419,6 +426,39 @@ The repository currently passes:
 - real procedural loop generation smoke checks
 - real Stable Audio fallback smoke checks
 - real scene-level audio acquisition and manifest generation via `library.py`
+
+### Audio Sourcing Hints
+
+Scene YAML can now steer audio acquisition explicitly:
+
+```yaml
+audio:
+  layers:
+    room_tone:
+      source: "audio_sources/grandma_porch/room_tone.wav"
+      volume: 0.28
+      sourcing:
+        tier: "procedural"
+        type: "room_tone"
+        params:
+          base_freq: 60
+          bandwidth: 200
+    periodic:
+      sources:
+        - "audio_sources/grandma_porch/cicada_near.mp3"
+        - "audio_sources/grandma_porch/cicada_far.mp3"
+      interval: [35, 90]
+      volume: 0.5
+      sourcing:
+        tier: "freesound_cc0"
+        queries:
+          - "summer cicada chorus afternoon"
+          - "distant cicada chorus breeze"
+        min_duration: 10
+        max_duration: 60
+```
+
+`library.py` also supports `--dry-run` for planning and `--force` to rebuild even when valid local files already exist. Legacy scene files can keep using `gen`; the loader normalizes it into `sourcing`.
 
 ### Remaining Operational Checks
 

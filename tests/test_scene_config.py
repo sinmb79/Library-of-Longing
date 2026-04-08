@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import yaml
+
 from scripts.scene_config import load_scene_config
 
 
@@ -25,3 +27,91 @@ def test_scene_config_accepts_optional_timelapse_segments() -> None:
 
     assert config["video"]["time_lapse_segments"][0]["label"] == "dawn"
     assert config["video"]["time_lapse_segments"][0]["source_path"].endswith("grandma_dawn.png")
+
+
+def test_scene_config_accepts_optional_audio_sourcing_and_gen_alias(tmp_path: Path) -> None:
+    scene_path = tmp_path / "scene_with_sourcing.yaml"
+    scene_path.write_text(
+        yaml.safe_dump(
+            {
+                "scene": {"id": "999", "slug": "sourcing-test"},
+                "visual": {
+                    "prompt": "demo prompt",
+                    "negative_prompt": "demo negative",
+                    "style": "ghibli",
+                    "resolution": [3840, 2160],
+                    "loop_duration_sec": 8,
+                    "motion_prompt": "gentle dust",
+                },
+                "audio": {
+                    "layers": {
+                        "room_tone": {
+                            "source": "./audio_sources/demo/room_tone.wav",
+                            "volume": 0.25,
+                            "sourcing": {
+                                "tier": "procedural",
+                                "type": "room_tone",
+                                "params": {"base_freq": 55, "bandwidth": 180},
+                            },
+                        },
+                        "continuous": {
+                            "source": "./audio_sources/demo/fan_loop.wav",
+                            "volume": 0.4,
+                            "gen": {
+                                "tier": "procedural",
+                                "type": "fan",
+                                "params": {"base_freq": 120},
+                            },
+                        },
+                        "periodic": {
+                            "sources": ["./audio_sources/demo/cicada_a.wav"],
+                            "interval": [20, 30],
+                            "volume": 0.5,
+                            "sourcing": {
+                                "tier": "freesound_cc0",
+                                "queries": ["summer cicada chorus"],
+                                "min_duration": 12,
+                                "max_duration": 45,
+                            },
+                        },
+                        "rare_events": {
+                            "sources": ["./audio_sources/demo/kitchen_clink.wav"],
+                            "interval": [120, 300],
+                            "volume": 0.35,
+                            "sourcing": {
+                                "tier": "stable_audio",
+                                "queries": ["kitchen ceramic cup clink"],
+                                "prompt": "isolated ceramic cup clink in a quiet kitchen",
+                            },
+                        },
+                    }
+                },
+                "video": {
+                    "target_duration_hours": 1,
+                    "film_grain": 10,
+                    "vignette": True,
+                    "time_lapse": False,
+                },
+                "metadata": {
+                    "title": {"ko": "테스트", "en": "Test"},
+                    "description": {"ko": "설명", "en": "Description"},
+                    "tags": ["test"],
+                    "storyline": {"ko": "이야기", "en": "Story"},
+                    "culture": "KR",
+                    "season": "summer",
+                },
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_scene_config(scene_path)
+
+    assert config["audio"]["layers"]["room_tone"]["sourcing"]["tier"] == "procedural"
+    assert config["audio"]["layers"]["room_tone"]["sourcing"]["params"]["base_freq"] == 55
+    assert config["audio"]["layers"]["continuous"]["sourcing"]["type"] == "fan"
+    assert "gen" not in config["audio"]["layers"]["continuous"]
+    assert config["audio"]["layers"]["periodic"]["sourcing"]["queries"] == ["summer cicada chorus"]
+    assert config["audio"]["layers"]["rare_events"]["sourcing"]["prompt"].startswith("isolated ceramic")

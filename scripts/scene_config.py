@@ -38,6 +38,12 @@ def _resolve_source_value(value: str, source_path: Path) -> str:
     return path.as_posix()
 
 
+def _normalize_sourcing_alias(layer_config: dict[str, Any]) -> None:
+    legacy = layer_config.pop("gen", None)
+    if legacy is not None and "sourcing" not in layer_config:
+        layer_config["sourcing"] = legacy
+
+
 def normalize_scene_config(raw_config: dict[str, Any], source_path: Path) -> dict[str, Any]:
     config = deepcopy(raw_config)
     config.setdefault("_meta", {})
@@ -46,9 +52,11 @@ def normalize_scene_config(raw_config: dict[str, Any], source_path: Path) -> dic
 
     layers = config["audio"]["layers"]
     for key in ("room_tone", "continuous"):
+        _normalize_sourcing_alias(layers[key])
         layers[key]["source_path"] = _resolve_source_value(layers[key]["source"], source_path)
 
     for key in ("periodic", "rare_events"):
+        _normalize_sourcing_alias(layers[key])
         layers[key]["source_paths"] = [_resolve_source_value(item, source_path) for item in layers[key]["sources"]]
         layers[key]["interval"] = [int(layers[key]["interval"][0]), int(layers[key]["interval"][1])]
 

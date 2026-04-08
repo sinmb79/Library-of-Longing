@@ -22,15 +22,38 @@ audio:
     room_tone:
       source: "audio_sources/grandma_porch/room_tone.wav"
       volume: 0.28
+      sourcing:
+        tier: "procedural"
+        type: "room_tone"
+        params:
+          base_freq: 60
+          bandwidth: 200
+          lfo_rate: 0.1
+          duration: 30
     continuous:
       source: "audio_sources/grandma_porch/fan_loop.wav"
       volume: 0.42
+      sourcing:
+        tier: "procedural"
+        type: "fan"
+        params:
+          base_freq: 120
+          harmonics: 3
+          wobble: 0.02
+          duration: 30
     periodic:
       sources:
         - "audio_sources/grandma_porch/cicada_near.mp3"
         - "audio_sources/grandma_porch/cicada_far.mp3"
       interval: [35, 90]
       volume: 0.5
+      sourcing:
+        tier: "freesound_cc0"
+        queries:
+          - "summer cicada chorus afternoon"
+          - "distant cicada chorus breeze"
+        min_duration: 10
+        max_duration: 60
     rare_events:
       sources:
         - "audio_sources/grandma_porch/sparrow.mp3"
@@ -38,6 +61,12 @@ audio:
         - "audio_sources/grandma_porch/kitchen_clink.wav"
       interval: [300, 900]
       volume: 0.32
+      sourcing:
+        tier: "auto"
+        queries:
+          - "single sparrow chirp"
+          - "ice glass clink"
+          - "kitchen ceramic cup clink"
 
 video:
   target_duration_hours: 10
