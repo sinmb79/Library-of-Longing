@@ -27,13 +27,13 @@ audio:
       volume: 0.42
     periodic:
       sources:
-        - "audio_sources/grandma_porch/cicada_near.wav"
-        - "audio_sources/grandma_porch/cicada_far.wav"
+        - "audio_sources/grandma_porch/cicada_near.mp3"
+        - "audio_sources/grandma_porch/cicada_far.mp3"
       interval: [35, 90]
       volume: 0.5
     rare_events:
       sources:
-        - "audio_sources/grandma_porch/sparrow.wav"
+        - "audio_sources/grandma_porch/sparrow.mp3"
         - "audio_sources/grandma_porch/ice_glass.wav"
         - "audio_sources/grandma_porch/kitchen_clink.wav"
       interval: [300, 900]

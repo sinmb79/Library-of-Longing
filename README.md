@@ -39,7 +39,11 @@ flowchart LR
 | C6 | `scripts/youtube_upload.py` | YouTube 업로드 dry-run / live 경로 | 완료 |
 | C7 | `n8n/library_of_longing_pipeline.json` | 전체 파이프라인 자동화 워크플로 | 완료 |
 | C9.1 | `scripts/audio_sourcing/freesound_fetcher.py` | Freesound CC0 검색, 프리뷰/메타데이터 캐시, MANIFEST 기록 | 완료 |
+| C9.2 | `scripts/audio_sourcing/nps_fetcher.py` | NPS Natural Sounds gallery 스크랩, US Public Domain 다운로드 | 완료 |
+| C9.3 | `scripts/audio_sourcing/archive_org_fetcher.py` | Archive.org 검색 + metadata 라이선스 검증 + 오디오 다운로드 | 완료 |
 | C9.4 | `scripts/audio_sourcing/procedural_gen.py` | room_tone / fan / wind / hum procedural loops, 48kHz stereo WAV output | 완료 |
+| C9.5 | `scripts/audio_sourcing/stable_audio_gen.py` | Stable Audio Open fallback generation | 완료 |
+| C9.6 | `scripts/audio_sourcing/library.py` | scene 기준 전체 오디오 소스 확보 + MANIFEST 작성 | 완료 |
 
 ## 저장소에 포함한 파일과 제외한 파일
 
@@ -311,7 +315,10 @@ python scripts/thumbnail_gen.py --scene scenes/001_grandma_porch_summer.yaml --b
 python scripts/youtube_upload.py --video output/final/grandma_porch_final.mp4 --metadata output/final/grandma_porch_final.youtube.json --thumbnail output/thumbnails/grandma_porch.jpg
 python scripts/audio_sourcing/freesound_fetcher.py search --query cicada --min-duration 5 --max-duration 20 --max-results 3
 python scripts/audio_sourcing/freesound_fetcher.py cache --sound-id 824924 --output-dir audio_sources/smoke
+python scripts/audio_sourcing/nps_fetcher.py --list
+python scripts/audio_sourcing/archive_org_fetcher.py --query "summer cicada forest" --max-results 3
 python scripts/audio_sourcing/procedural_gen.py --type fan --duration 3 --output audio_sources/smoke/fan_loop.wav --seed 21
+python scripts/audio_sourcing/library.py --scene scenes/001_grandma_porch_summer.yaml
 ```
 
 ## 테스트 및 검증
@@ -320,13 +327,17 @@ python scripts/audio_sourcing/procedural_gen.py --type fan --duration 3 --output
 
 | 항목 | 결과 |
 |------|------|
-| 전체 테스트 | `pytest tests -v` 기준 `32 passed` |
+| 전체 테스트 | `pytest tests -v` 기준 `47 passed` |
 | C3 스모크 | 실제 FFmpeg 2초 합성 확인 |
 | C4 스모크 | 실제 mux + metadata JSON 생성 확인 |
 | C5 스모크 | 실제 JPG 썸네일 생성 확인 |
 | C6 스모크 | 실제 dry-run JSON 출력 확인 |
 | C9.1 스모크 | Freesound CC0 검색 + 실제 MP3 캐시 + MANIFEST 생성 확인 |
+| C9.2 스모크 | NPS gallery 실제 catalog 파싱 확인 |
+| C9.3 스모크 | Archive.org 실제 검색 응답 확인 |
 | C9.4 스모크 | 실제 `fan_loop.wav` 생성 + CLI 스탠드얼론 실행 확인 |
+| C9.5 스모크 | Stable Audio 실제 WAV 생성 확인 |
+| C9.6 스모크 | 실제 scene 001 기준 audio_sources 채움 + MANIFEST 작성 확인 |
 | Google API 패키지 | import 확인 |
 
 테스트 실행:
@@ -387,19 +398,27 @@ Library of Longing is a production pipeline for long-form ambience videos. A sin
 | `scripts/thumbnail_gen.py` | Render final thumbnails and write thumbnail workflows |
 | `scripts/youtube_upload.py` | Build YouTube upload requests, dry-run by default |
 | `scripts/audio_sourcing/freesound_fetcher.py` | Search Freesound CC0 audio, cache previews, and write provenance manifests |
+| `scripts/audio_sourcing/nps_fetcher.py` | Scrape the NPS Natural Sounds gallery and download US public domain field recordings |
+| `scripts/audio_sourcing/archive_org_fetcher.py` | Search Archive.org, verify open licenses from metadata, and download audio files |
 | `scripts/audio_sourcing/procedural_gen.py` | Generate loopable mechanical ambience layers such as fan, hum, wind, and room tone |
+| `scripts/audio_sourcing/stable_audio_gen.py` | Generate rare fallback effects with Stable Audio Open |
+| `scripts/audio_sourcing/library.py` | Populate a scene's missing audio files across all sourcing tiers and write a unified manifest |
 | `n8n/library_of_longing_pipeline.json` | Orchestrate the end-to-end flow |
 
 ### Verification
 
 The repository currently passes:
 
-- `pytest tests -v` with `32 passed`
+- `pytest tests -v` with `47 passed`
 - real FFmpeg smoke runs for composition and final assembly
 - real thumbnail JPG rendering
 - real YouTube dry-run JSON output
 - real Freesound CC0 search and preview cache smoke checks
+- real NPS gallery parsing smoke checks
+- real Archive.org search smoke checks
 - real procedural loop generation smoke checks
+- real Stable Audio fallback smoke checks
+- real scene-level audio acquisition and manifest generation via `library.py`
 
 ### Remaining Operational Checks
 
