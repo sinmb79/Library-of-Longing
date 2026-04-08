@@ -13,6 +13,7 @@ htmlcov/
 .venv/
 venv/
 .codex/
+.worktrees/
 
 # Local-only agent/planning files
 AGENTS.md
