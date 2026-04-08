@@ -1,157 +1,303 @@
 # Library of Longing
 
-> 한국의 기억과 계절감을 담아 10시간 앰비언스 영상을 만드는 자동화 파이프라인입니다.  
-> A production pipeline for 10-hour ambience videos shaped by Korean memory, place, and season.
+> 한국의 기억과 계절감을 담아 10시간 앰비언스 영상을 제작하는 자동화 파이프라인  
+> An automated production pipeline for 10-hour ambience videos shaped by Korean memory, place, and season
 
-영문 안내: [English](#english)  
-English docs: [English](#english)
+영문 설명은 아래 [English](#english) 섹션에서 바로 볼 수 있습니다.  
+English readers can jump directly to the [English](#english) section below.
 
-## 개요
+## 프로젝트 소개
 
-이 프로젝트는 장면 설정 YAML 하나를 기준으로 오디오 믹싱, ComfyUI 이미지/루프 생성, FFmpeg 장시간 합성, 최종 조립, 썸네일 렌더링, YouTube 업로드 준비, n8n 오케스트레이션까지 연결합니다. 현재 `C8 → C1 → C2 → C3 → C4 → C5 → C6 → C7` 전체 골격이 구현되어 있습니다.  
-This project connects scene-config YAML, ambient audio mixing, ComfyUI still/loop generation, FFmpeg long-form composition, final assembly, thumbnail rendering, YouTube upload prep, and n8n orchestration. The full `C8 → C1 → C2 → C3 → C4 → C5 → C6 → C7` skeleton is now implemented.
+`Library of Longing`은 한 편의 장면을 하나의 YAML 설정 파일로 정의하고, 그 설정을 기준으로 이미지 생성, 루프 애니메이션 제작, 장시간 영상 합성, 앰비언트 오디오 믹싱, 최종 MP4 조립, 썸네일 제작, YouTube 업로드 준비, n8n 자동화까지 이어지는 제작 시스템입니다.
+
+핵심 목표는 단순한 "배경음 영상"이 아니라, 장소와 계절의 질감을 오래 머물 수 있는 영상으로 만드는 것입니다. 그래서 이 저장소는 단순 스크립트 모음이 아니라, 한 편의 장면을 끝까지 생산 가능한 파이프라인 형태로 구성되어 있습니다.
+
+## 한눈에 보기
 
 ```mermaid
 flowchart LR
-    A["Scene YAML<br/>scenes/*.yaml"] --> B["C8<br/>scene_config.py"]
-    B --> C["C1<br/>audio_mixer.py"]
-    B --> D["C2<br/>comfyui_queue.py"]
-    B --> E["C3<br/>video_compositor.py"]
-    D --> F["Loop Clip / Still"]
-    C --> G["Mixed Ambient Audio"]
-    F --> H["10h Video Master"]
-    G --> I["C4<br/>assemble_final.py"]
-    H --> I
-    I --> J["YouTube Metadata JSON"]
-    I --> K["Thumbnail Request JSON"]
-    K --> L["C5<br/>thumbnail_gen.py"]
-    L --> M["Thumbnail JPG"]
-    I --> N["C6<br/>youtube_upload.py"]
-    M --> N
-    N --> O["C7<br/>n8n workflow"]
+    A["Scene Config<br/>scenes/*.yaml"] --> B["scene_config.py"]
+    B --> C["audio_mixer.py<br/>4-layer ambient mix"]
+    B --> D["comfyui_queue.py<br/>still -> loop generation"]
+    B --> E["video_compositor.py<br/>10h composition"]
+    E --> F["assemble_final.py<br/>final mp4 + metadata"]
+    F --> G["thumbnail_gen.py<br/>thumbnail jpg + workflow"]
+    F --> H["youtube_upload.py<br/>dry-run / live upload"]
+    H --> I["n8n pipeline<br/>automation"]
 ```
 
-## 상태
+## 현재 구현 범위
 
-| 항목 | 상태 | 메모 |
-|------|------|------|
-| C8 Scene Config | 완료 | 스키마 검증, 경로 정규화, `time_lapse_segments` 지원 |
-| C1 Audio Mixer | 완료 | 4-layer 믹싱 + LUFS 정규화 |
-| C2 ComfyUI Queue | 완료 | 2-stage 큐잉, dry-run/단위테스트 완료 |
-| C3 Video Compositor | 완료 | 기본 루프 + time-lapse 커맨드 지원 |
-| C4 Final Assembly | 완료 | MP4 mux + YouTube metadata JSON + thumbnail request JSON |
-| C5 Thumbnail Generator | 완료 | Pillow 렌더 + `workflows/thumbnail.json` 생성 |
-| C6 YouTube Upload | 완료 | dry-run 기본, OAuth 기반 live 업로드 경로 구현 |
-| C7 n8n Workflow | 완료 | `n8n/library_of_longing_pipeline.json` 작성 |
-| 테스트 | 통과 | `pytest tests -v` 기준 `23 passed` |
-| 라이브 외부연동 | 부분 보류 | ComfyUI 실큐잉, 실제 YouTube 업로드, n8n import는 현장 환경에서 최종 확인 필요 |
+| 단계 | 파일 | 역할 | 상태 |
+|------|------|------|------|
+| C8 | `scripts/scene_config.py` | scene YAML 검증, 정규화, 경로 해석 | 완료 |
+| C1 | `scripts/audio_mixer.py` | 4-layer 앰비언트 오디오 생성 | 완료 |
+| C2 | `scripts/comfyui_queue.py` | ComfyUI 2-stage 이미지/루프 큐잉 | 완료 |
+| C3 | `scripts/video_compositor.py` | 루프 클립을 장시간 영상으로 합성 | 완료 |
+| C4 | `scripts/assemble_final.py` | 영상+오디오 최종 조립, 메타데이터 생성 | 완료 |
+| C5 | `scripts/thumbnail_gen.py` | 썸네일 이미지 렌더 및 변형 workflow 생성 | 완료 |
+| C6 | `scripts/youtube_upload.py` | YouTube 업로드 dry-run / live 경로 | 완료 |
+| C7 | `n8n/library_of_longing_pipeline.json` | 전체 파이프라인 자동화 워크플로 | 완료 |
 
-## 빠른 시작
+## 저장소에 포함한 파일과 제외한 파일
 
-1. 장면 설정 확인  
-   Inspect the scene config
+이 저장소는 공개 배포를 기준으로 정리되어 있습니다.
 
-   ```powershell
-   python scripts/scene_config.py scenes/001_grandma_porch_summer.yaml --pretty
-   ```
+포함한 것:
 
-2. 오디오 생성  
-   Render ambient audio
+| 포함 대상 | 이유 |
+|-----------|------|
+| `scripts/` | 실제 실행 코드 |
+| `scenes/` | 입력 스키마와 샘플 설정 |
+| `workflows/` | ComfyUI workflow 템플릿 |
+| `n8n/` | 자동화 workflow |
+| `tests/` | 재현 가능한 검증 코드 |
+| `fonts/BebasNeue-Regular.ttf` | 썸네일 렌더에 실제로 필요 |
+| `README.md` | 사용 문서 |
 
-   ```powershell
-   python scripts/audio_mixer.py --scene scenes/001_grandma_porch_summer.yaml --output output/audio/grandma_porch_mix.wav
-   ```
+제외한 것:
 
-3. ComfyUI 워크플로 미리보기 또는 큐잉  
-   Preview or queue the ComfyUI workflow
+| 제외 대상 | 이유 |
+|-----------|------|
+| `output/` | 생성 산출물, 저장소 불필요 |
+| `audio_sources/` | 로컬 자산, 용량 증가 가능 |
+| `.pytest_cache/`, `__pycache__/` | 캐시 파일 |
+| `.codex/` | 로컬 Codex 보조 파일 |
+| `AGENTS.md`, `CLAUDE.md` | AI 작업용 내부 지시서 |
+| `Codex_Development_Tasks.md`, `Library_of_Longing_Masterplan.md` | 내부 계획 문서 |
+| `docs/superpowers/` | 개발 과정 계획 로그 |
 
-   ```powershell
-   python scripts/comfyui_queue.py --scene scenes/001_grandma_porch_summer.yaml --write-template workflows/ambient_scene.json --dry-run
-   ```
+## 디렉토리 구조
 
-4. 루프 클립 장시간 합성  
-   Expand a loop clip into a long-form master
+```text
+Library-of-Longing/
+├── README.md
+├── .gitignore
+├── fonts/
+│   └── BebasNeue-Regular.ttf
+├── n8n/
+│   └── library_of_longing_pipeline.json
+├── scenes/
+│   ├── schema.yaml
+│   └── 001_grandma_porch_summer.yaml
+├── scripts/
+│   ├── __init__.py
+│   ├── scene_config.py
+│   ├── audio_mixer.py
+│   ├── comfyui_queue.py
+│   ├── video_compositor.py
+│   ├── assemble_final.py
+│   ├── thumbnail_gen.py
+│   └── youtube_upload.py
+├── tests/
+│   ├── conftest.py
+│   ├── test_scene_config.py
+│   ├── test_audio_mixer.py
+│   ├── test_comfyui_queue.py
+│   ├── test_video_compositor.py
+│   ├── test_assemble_final.py
+│   ├── test_thumbnail_gen.py
+│   ├── test_youtube_upload.py
+│   └── test_n8n_pipeline.py
+└── workflows/
+    ├── ambient_scene.json
+    └── thumbnail.json
+```
 
-   ```powershell
-   python scripts/video_compositor.py --scene scenes/001_grandma_porch_summer.yaml --loop-clip output/video/demo_loop.mp4 --output output/video/demo_10h.mp4 --dry-run
-   ```
+## 핵심 입력: Scene Config
 
-5. 최종 영상과 메타데이터 조립  
-   Assemble the final MP4 and sidecar JSON files
+모든 스크립트는 `scenes/*.yaml`을 기준으로 움직입니다. 즉, 새 영상을 만들 때 가장 먼저 바꿔야 하는 파일은 코드가 아니라 scene YAML입니다.
 
-   ```powershell
-   python scripts/assemble_final.py --scene scenes/001_grandma_porch_summer.yaml --video output/video/demo_10h.mp4 --audio output/audio/grandma_porch_mix.wav --output output/final/grandma_porch_final.mp4
-   ```
+예시 구조:
 
-6. 썸네일 렌더 및 변형 워크플로 생성  
-   Render the thumbnail and write the variation workflow
+```yaml
+scene:
+  id: "001"
+  slug: "grandma-porch-summer"
 
-   ```powershell
-   python scripts/thumbnail_gen.py --scene scenes/001_grandma_porch_summer.yaml --base-image output/video/demo_still.png --output output/thumbnails/grandma_porch.jpg --write-template workflows/thumbnail.json --uploaded-image-name grandma_porch_still.png
-   ```
+visual:
+  prompt: "..."
+  negative_prompt: "..."
+  style: "ghibli"
+  resolution: [3840, 2160]
+  loop_duration_sec: 8
+  motion_prompt: "..."
 
-7. YouTube 업로드 dry-run  
-   Run the YouTube upload path in safe dry-run mode
+audio:
+  layers:
+    room_tone:
+      source: "audio_sources/grandma_porch/room_tone.wav"
+      volume: 0.28
+    continuous:
+      source: "audio_sources/grandma_porch/fan_loop.wav"
+      volume: 0.42
+    periodic:
+      sources: ["...", "..."]
+      interval: [35, 90]
+      volume: 0.5
+    rare_events:
+      sources: ["...", "..."]
+      interval: [300, 900]
+      volume: 0.32
 
-   ```powershell
-   python scripts/youtube_upload.py --video output/final/grandma_porch_final.mp4 --metadata output/final/grandma_porch_final.youtube.json --thumbnail output/thumbnails/grandma_porch.jpg
-   ```
+video:
+  target_duration_hours: 10
+  film_grain: 15
+  vignette: true
+  time_lapse: false
+  time_lapse_segments:
+    - source: "output/video/timelapse/grandma_dawn.png"
+      label: "dawn"
+```
 
-## 구조
+## 모듈별 상세 설명
 
-| 경로 | 설명 |
+### 1. `scene_config.py`
+
+역할:
+
+- YAML 파일을 로드합니다.
+- `schema.yaml` 기준으로 구조를 검증합니다.
+- 상대 경로를 프로젝트 기준 절대 경로로 정규화합니다.
+- 후속 스크립트가 그대로 사용할 수 있는 공통 config 객체를 반환합니다.
+
+중요 포인트:
+
+- `./...` 경로는 scene 파일 기준으로 해석됩니다.
+- 일반 상대 경로는 프로젝트 루트 기준으로 해석됩니다.
+- `time_lapse_segments`도 함께 정규화됩니다.
+
+### 2. `audio_mixer.py`
+
+역할:
+
+- 장면 설정의 4개 오디오 레이어를 하나의 스테레오 믹스로 합칩니다.
+
+레이어 구성:
+
+| 레이어 | 설명 |
+|--------|------|
+| `room_tone` | 공간의 바탕 소리 |
+| `continuous` | 선풍기, 바람, 장작불 같은 지속음 |
+| `periodic` | 매미, 파도, 나뭇잎처럼 자주 반복되는 이벤트 |
+| `rare_events` | 유리컵 소리, 부엌 기척, 새소리처럼 드문 이벤트 |
+
+추가 처리:
+
+- 이벤트 랜덤 배치
+- 스테레오 패닝
+- 루프 경계 크로스페이드
+- `-14 LUFS` 근처 정규화
+- peak limiter 적용
+
+### 3. `comfyui_queue.py`
+
+역할:
+
+- ComfyUI API를 사용해 2단계 생성 파이프라인을 실행합니다.
+
+동작 순서:
+
+1. SDXL + LoRA로 정적 장면 이미지를 생성
+2. 생성된 이미지를 다시 업로드
+3. Wan2.2 I2V로 루프 클립 생성
+
+포함 내용:
+
+- `ComfyUIClient` API 래퍼
+- workflow JSON 빌더
+- dry-run 템플릿 출력
+- ComfyUI history polling
+- output download helper
+
+### 4. `video_compositor.py`
+
+역할:
+
+- 짧은 루프 클립을 10시간 같은 장시간 영상으로 확장합니다.
+
+지원 모드:
+
+| 모드 | 설명 |
 |------|------|
-| `scenes/` | 장면 스키마와 개별 영상 설정 |
-| `scripts/` | 전체 파이프라인 실행 스크립트 |
-| `workflows/` | ComfyUI 워크플로 템플릿 |
-| `n8n/` | 자동화용 n8n workflow JSON |
-| `tests/` | pytest 기반 검증 |
-| `docs/superpowers/plans/` | 작업 계획 및 실행 기록 |
-| `fonts/` | 썸네일/타이틀 카드용 폰트 자산 |
+| `basic` | 하나의 루프 클립을 반복해 장시간 영상 생성 |
+| `timelapse` | 여러 이미지/클립을 `xfade`로 이어 시간 흐름형 영상 생성 |
 
-## 현재 검증 범위
+후처리 옵션:
 
-| 항목 | 검증 방식 |
-|------|-----------|
-| C1 Audio Mixer | 단위테스트 + demo WAV 생성 |
-| C2 ComfyUI Queue | 단위테스트 + workflow dry-run |
-| C3 Video Compositor | 단위테스트 + FFmpeg 스모크 |
-| C4 Final Assembly | 단위테스트 + 실제 2초 mux 스모크 |
-| C5 Thumbnail Generator | 단위테스트 + 실제 JPG 렌더 |
-| C6 YouTube Upload | 단위테스트 + 실제 dry-run JSON 출력 |
-| C7 n8n Workflow | JSON 구조 테스트 |
+- film grain
+- vignette
+- warm / neutral color temperature
+- Lanczos scaling
+- 24fps 고정
 
-## 다음 단계
+### 5. `assemble_final.py`
 
-남은 일은 구현보다 현장 검증입니다. `ComfyUI localhost:8188` 실큐잉, 실제 YouTube OAuth 업로드, 그리고 `n8n` import 후 실행 로그만 확인하면 운영 단계로 넘어갈 수 있습니다.  
-The remaining work is operational verification rather than core implementation. Once live ComfyUI queueing, a real YouTube OAuth upload, and an n8n import/run are confirmed, the pipeline is ready for production use.
+역할:
 
----
+- C3 영상과 C1 오디오를 최종 MP4로 조립합니다.
+- YouTube용 메타데이터 JSON을 생성합니다.
+- 썸네일 생성 요청용 JSON도 함께 생성합니다.
 
-## English
+출력:
 
-Library of Longing is a long-form ambience pipeline built around one scene YAML file. It now covers the full implementation skeleton: config loading, ambient audio mixing, ComfyUI still-to-loop generation, FFmpeg long-form composition, final assembly, thumbnail rendering, upload prep, and n8n orchestration.
+| 파일 | 설명 |
+|------|------|
+| `*_final.mp4` | 최종 영상 |
+| `*.youtube.json` | 업로드용 메타데이터 |
+| `*.thumbnail_request.json` | 썸네일 요청 정보 |
 
-### Flow
+### 6. `thumbnail_gen.py`
 
-`Scene YAML -> scene_config.py -> audio_mixer.py / comfyui_queue.py / video_compositor.py -> assemble_final.py -> thumbnail_gen.py / youtube_upload.py -> n8n workflow`
+역할:
 
-### Current Coverage
+- 썸네일 JPG를 로컬에서 렌더합니다.
+- ComfyUI용 thumbnail variation workflow도 작성합니다.
 
-| Item | Status | Notes |
-|------|--------|-------|
-| C8 Scene Config | Done | Schema validation, path normalization, and `time_lapse_segments` |
-| C1 Audio Mixer | Done | Four-layer ambience mix with loudness normalization |
-| C2 ComfyUI Queue | Done | Two-stage still-to-loop workflow, tested with dry-run and unit tests |
-| C3 Video Compositor | Done | Basic loop mode and time-lapse command builder |
-| C4 Final Assembly | Done | MP4 mux plus YouTube metadata and thumbnail-request sidecars |
-| C5 Thumbnail Generator | Done | Local thumbnail rendering plus `workflows/thumbnail.json` |
-| C6 YouTube Upload | Done | Safe dry-run by default, live OAuth path implemented |
-| C7 n8n Workflow | Done | Orchestration JSON for manual/weekly execution |
-| Test Suite | Passing | `23 passed` in the full suite |
-| Live Service Checks | Pending | Real ComfyUI queueing, live YouTube upload, and n8n import still need environment-side confirmation |
+처리 방식:
 
-### Quick Start
+1. 베이스 이미지를 1280x720으로 cover crop
+2. 대비/채도/블러 미세 보정
+3. 하단 그라디언트 바 추가
+4. 한글 제목, 영문 제목, 시간 텍스트 오버레이
+
+### 7. `youtube_upload.py`
+
+역할:
+
+- 최종 MP4와 메타데이터 JSON을 바탕으로 YouTube 업로드 요청을 구성합니다.
+
+안전 원칙:
+
+- 기본 동작은 `dry_run`
+- 실제 업로드는 `--live`일 때만 수행
+- OAuth client secret/token은 프로젝트 내부가 아니라 `C:\Users\sinmb\key`에서 읽음
+
+### 8. `n8n/library_of_longing_pipeline.json`
+
+역할:
+
+- 수동 실행 또는 주간 스케줄로 전체 파이프라인을 실행하는 n8n workflow입니다.
+
+포함 노드:
+
+| 노드 | 역할 |
+|------|------|
+| `Manual Trigger` | 수동 시작 |
+| `Schedule Weekly` | 주간 자동 시작 |
+| `Read Scene Config` | 장면 파일 조회 |
+| `Generate Visual Loop` | C2 실행 |
+| `Wait for ComfyUI` | 지연/대기 |
+| `Compose Video` | C3 실행 |
+| `Mix Audio` | C1 실행 |
+| `Assemble Final` | C4 실행 |
+| `Generate Thumbnail` | C5 실행 |
+| `Upload to YouTube` | C6 실행 |
+| `Notify Completion` | 종료 알림 자리 |
+
+## 실행 순서
+
+실제 한 편을 수동으로 만들 때 권장 순서는 아래와 같습니다.
 
 ```powershell
 python scripts/scene_config.py scenes/001_grandma_porch_summer.yaml --pretty
@@ -163,14 +309,89 @@ python scripts/thumbnail_gen.py --scene scenes/001_grandma_porch_summer.yaml --b
 python scripts/youtube_upload.py --video output/final/grandma_porch_final.mp4 --metadata output/final/grandma_porch_final.youtube.json --thumbnail output/thumbnails/grandma_porch.jpg
 ```
 
-### Directory Map
+## 테스트 및 검증
 
-| Path | Purpose |
-|------|---------|
-| `scenes/` | Scene schema and per-video configs |
-| `scripts/` | Pipeline entry points |
-| `workflows/` | ComfyUI workflow templates |
-| `n8n/` | n8n orchestration workflow |
-| `tests/` | pytest verification |
-| `docs/superpowers/plans/` | Execution plans and build notes |
-| `fonts/` | Font assets for visual outputs |
+현재 저장소에서 확인된 검증 결과:
+
+| 항목 | 결과 |
+|------|------|
+| 전체 테스트 | `pytest tests -v` 기준 `23 passed` |
+| C3 스모크 | 실제 FFmpeg 2초 합성 확인 |
+| C4 스모크 | 실제 mux + metadata JSON 생성 확인 |
+| C5 스모크 | 실제 JPG 썸네일 생성 확인 |
+| C6 스모크 | 실제 dry-run JSON 출력 확인 |
+| Google API 패키지 | import 확인 |
+
+테스트 실행:
+
+```powershell
+pytest tests -v
+```
+
+## 현재 남은 것
+
+이 저장소에서 남은 일은 구현이 아니라 현장 연결 확인입니다.
+
+남은 운영 검증:
+
+| 항목 | 설명 |
+|------|------|
+| ComfyUI live queue | `localhost:8188`에서 실제 prompt/history/view 경로 확인 |
+| YouTube live upload | 실제 OAuth 자격으로 `--live` 업로드 확인 |
+| n8n import/run | workflow import 후 노드 연결/실행 로그 확인 |
+
+## English
+
+### Overview
+
+Library of Longing is a production pipeline for long-form ambience videos. A single scene YAML drives image generation, loop animation, long-form composition, ambient audio mixing, final MP4 assembly, thumbnail rendering, YouTube upload prep, and n8n automation.
+
+### Included in This Repository
+
+| Included | Why |
+|----------|-----|
+| `scripts/` | Actual executable pipeline code |
+| `scenes/` | Scene schema and sample config |
+| `workflows/` | ComfyUI templates |
+| `n8n/` | Automation workflow |
+| `tests/` | Reproducible verification |
+| `fonts/` | Required thumbnail font asset |
+| `README.md` | Public-facing documentation |
+
+### Excluded from This Repository
+
+| Excluded | Why |
+|----------|-----|
+| `output/` | Generated artifacts |
+| `audio_sources/` | Local media assets |
+| `.codex/`, caches | Local-only helper files |
+| `AGENTS.md`, `CLAUDE.md` | Internal AI instruction files |
+| planning docs | Internal development process logs |
+
+### Main Modules
+
+| File | Responsibility |
+|------|----------------|
+| `scripts/scene_config.py` | Load, validate, normalize scene configs |
+| `scripts/audio_mixer.py` | Build four-layer ambience mixes |
+| `scripts/comfyui_queue.py` | Queue still-to-loop generation in ComfyUI |
+| `scripts/video_compositor.py` | Expand loop clips into long-form masters |
+| `scripts/assemble_final.py` | Merge video/audio and write sidecar metadata |
+| `scripts/thumbnail_gen.py` | Render final thumbnails and write thumbnail workflows |
+| `scripts/youtube_upload.py` | Build YouTube upload requests, dry-run by default |
+| `n8n/library_of_longing_pipeline.json` | Orchestrate the end-to-end flow |
+
+### Verification
+
+The repository currently passes:
+
+- `pytest tests -v` with `23 passed`
+- real FFmpeg smoke runs for composition and final assembly
+- real thumbnail JPG rendering
+- real YouTube dry-run JSON output
+
+### Remaining Operational Checks
+
+- live ComfyUI execution against `localhost:8188`
+- a real YouTube upload with OAuth credentials
+- importing and running the n8n workflow in the target environment

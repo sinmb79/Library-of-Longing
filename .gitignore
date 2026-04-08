@@ -14,6 +14,13 @@ htmlcov/
 venv/
 .codex/
 
+# Local-only agent/planning files
+AGENTS.md
+CLAUDE.md
+Codex_Development_Tasks.md
+Library_of_Longing_Masterplan.md
+docs/superpowers/
+
 # Generated project assets
 output/
 audio_sources/
