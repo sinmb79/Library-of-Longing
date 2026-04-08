@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import logging
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,6 +24,7 @@ CC0_LICENSE_VALUES = {
     "http://creativecommons.org/publicdomain/zero/1.0/",
     "https://creativecommons.org/publicdomain/zero/1.0/",
 }
+logger = logging.getLogger(__name__)
 
 
 def load_credentials(credentials_path: Path = DEFAULT_CREDENTIALS_PATH) -> dict[str, Any]:
@@ -161,8 +164,8 @@ def _download_sound_impl(
                 headers={"Authorization": f"Bearer {resolved_access_token}"},
             )
             return downloaded, normalized, "oauth-original"
-        except Exception:
-            pass
+        except requests.RequestException as exc:
+            logger.warning("OAuth download failed for %s: %s. Falling back to preview.", sound_id, exc)
 
     preview_url = normalized.get("preview_hq_mp3")
     if not preview_url:
@@ -226,6 +229,7 @@ def cache_locally(
     output_dir.mkdir(parents=True, exist_ok=True)
     sidecar_path = output_dir / f"freesound_{int(sound_id)}.json"
     manifest_path = output_dir / "MANIFEST.json"
+    credentials = load_credentials(credentials_path)
     existing_path = _cached_path(output_dir, sound_id)
     if existing_path and sidecar_path.exists():
         sidecar_payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
@@ -239,9 +243,9 @@ def cache_locally(
         )
         return existing_path
 
-    metadata = _read_sound_details(sound_id, credentials=load_credentials(credentials_path), session=session)
+    metadata = _read_sound_details(sound_id, credentials=credentials, session=session)
     extension = ".mp3"
-    if _resolve_access_token(load_credentials(credentials_path), access_token):
+    if _resolve_access_token(credentials, access_token):
         original_type = metadata.get("file_type", "").strip().lower()
         if original_type:
             extension = f".{original_type}"
@@ -254,6 +258,7 @@ def cache_locally(
         access_token=access_token,
         metadata=metadata,
     )
+    sha256 = hashlib.sha256(downloaded_path.read_bytes()).hexdigest()
 
     sidecar_payload = {
         "provider": "freesound",
@@ -266,6 +271,7 @@ def cache_locally(
         "preview_hq_mp3": normalized["preview_hq_mp3"],
         "download_mode": download_mode,
         "original_type": normalized["file_type"],
+        "sha256": sha256,
         "cached_at": datetime.now(UTC).isoformat(),
     }
     _write_json(sidecar_path, sidecar_payload)

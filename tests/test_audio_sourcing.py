@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
 import pytest
+import requests
 
 from scripts.audio_sourcing.freesound_fetcher import (
     cache_locally,
@@ -23,7 +25,7 @@ class FakeResponse:
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
-            raise RuntimeError(f"HTTP {self.status_code}")
+            raise requests.HTTPError(f"HTTP {self.status_code}")
 
 
 class FakeSession:
@@ -184,6 +186,45 @@ def test_download_sound_falls_back_to_preview_when_oauth_is_missing(tmp_path: Pa
     assert session.calls[1][3] is None
 
 
+def test_download_sound_falls_back_to_preview_when_oauth_download_fails(tmp_path: Path) -> None:
+    credentials_path = _write_credentials(tmp_path / "freesound.json")
+    detail_url = "https://freesound.org/apiv2/sounds/446/"
+    download_url = "https://freesound.org/apiv2/sounds/446/download/"
+    preview_url = "https://cdn.example.com/446.mp3"
+    session = FakeSession(
+        {
+            detail_url: [
+                FakeResponse(
+                    {
+                        "id": 446,
+                        "name": "Cicadas Backup",
+                        "username": "recordist",
+                        "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+                        "type": "wav",
+                        "url": "https://freesound.org/people/recordist/sounds/446/",
+                        "previews": {"preview-hq-mp3": preview_url},
+                    }
+                )
+            ],
+            download_url: [FakeResponse(status_code=401)],
+            preview_url: [FakeResponse(content=b"preview-after-oauth-fail")],
+        }
+    )
+
+    destination = download_sound(
+        446,
+        tmp_path / "cicadas_oauth_fallback.mp3",
+        credentials_path=credentials_path,
+        session=session,
+        access_token="demo-access-token",
+    )
+
+    assert destination.read_bytes() == b"preview-after-oauth-fail"
+    assert session.calls[1][1] == download_url
+    assert session.calls[1][3] == {"Authorization": "Bearer demo-access-token"}
+    assert session.calls[2][1] == preview_url
+
+
 def test_cache_locally_deduplicates_and_writes_sidecar_and_manifest(tmp_path: Path) -> None:
     credentials_path = _write_credentials(tmp_path / "freesound.json")
     output_dir = tmp_path / "audio_sources"
@@ -221,10 +262,14 @@ def test_cache_locally_deduplicates_and_writes_sidecar_and_manifest(tmp_path: Pa
     sidecar_data = json.loads(sidecar.read_text(encoding="utf-8"))
     manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
 
+    expected_sha256 = hashlib.sha256(b"cached-preview").hexdigest()
+
     assert sidecar_data["sound_id"] == 555
     assert sidecar_data["author"] == "recordist"
     assert sidecar_data["license"] == "Creative Commons 0"
     assert sidecar_data["download_mode"] == "preview-hq-mp3"
+    assert sidecar_data["sha256"] == expected_sha256
     assert manifest_data["sources"][0]["sound_id"] == 555
     assert manifest_data["sources"][0]["file"] == "freesound_555.mp3"
+    assert manifest_data["sources"][0]["sha256"] == expected_sha256
     assert len(session.calls) == 2

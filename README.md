@@ -39,6 +39,7 @@ flowchart LR
 | C6 | `scripts/youtube_upload.py` | YouTube 업로드 dry-run / live 경로 | 완료 |
 | C7 | `n8n/library_of_longing_pipeline.json` | 전체 파이프라인 자동화 워크플로 | 완료 |
 | C9.1 | `scripts/audio_sourcing/freesound_fetcher.py` | Freesound CC0 검색, 프리뷰/메타데이터 캐시, MANIFEST 기록 | 완료 |
+| C9.4 | `scripts/audio_sourcing/procedural_gen.py` | room_tone / fan / wind / hum procedural loops, 48kHz stereo WAV output | 완료 |
 
 ## 저장소에 포함한 파일과 제외한 파일
 
@@ -310,6 +311,7 @@ python scripts/thumbnail_gen.py --scene scenes/001_grandma_porch_summer.yaml --b
 python scripts/youtube_upload.py --video output/final/grandma_porch_final.mp4 --metadata output/final/grandma_porch_final.youtube.json --thumbnail output/thumbnails/grandma_porch.jpg
 python scripts/audio_sourcing/freesound_fetcher.py search --query cicada --min-duration 5 --max-duration 20 --max-results 3
 python scripts/audio_sourcing/freesound_fetcher.py cache --sound-id 824924 --output-dir audio_sources/smoke
+python scripts/audio_sourcing/procedural_gen.py --type fan --duration 3 --output audio_sources/smoke/fan_loop.wav --seed 21
 ```
 
 ## 테스트 및 검증
@@ -318,12 +320,13 @@ python scripts/audio_sourcing/freesound_fetcher.py cache --sound-id 824924 --out
 
 | 항목 | 결과 |
 |------|------|
-| 전체 테스트 | `pytest tests -v` 기준 `27 passed` |
+| 전체 테스트 | `pytest tests -v` 기준 `32 passed` |
 | C3 스모크 | 실제 FFmpeg 2초 합성 확인 |
 | C4 스모크 | 실제 mux + metadata JSON 생성 확인 |
 | C5 스모크 | 실제 JPG 썸네일 생성 확인 |
 | C6 스모크 | 실제 dry-run JSON 출력 확인 |
 | C9.1 스모크 | Freesound CC0 검색 + 실제 MP3 캐시 + MANIFEST 생성 확인 |
+| C9.4 스모크 | 실제 `fan_loop.wav` 생성 + CLI 스탠드얼론 실행 확인 |
 | Google API 패키지 | import 확인 |
 
 테스트 실행:
@@ -384,17 +387,19 @@ Library of Longing is a production pipeline for long-form ambience videos. A sin
 | `scripts/thumbnail_gen.py` | Render final thumbnails and write thumbnail workflows |
 | `scripts/youtube_upload.py` | Build YouTube upload requests, dry-run by default |
 | `scripts/audio_sourcing/freesound_fetcher.py` | Search Freesound CC0 audio, cache previews, and write provenance manifests |
+| `scripts/audio_sourcing/procedural_gen.py` | Generate loopable mechanical ambience layers such as fan, hum, wind, and room tone |
 | `n8n/library_of_longing_pipeline.json` | Orchestrate the end-to-end flow |
 
 ### Verification
 
 The repository currently passes:
 
-- `pytest tests -v` with `27 passed`
+- `pytest tests -v` with `32 passed`
 - real FFmpeg smoke runs for composition and final assembly
 - real thumbnail JPG rendering
 - real YouTube dry-run JSON output
 - real Freesound CC0 search and preview cache smoke checks
+- real procedural loop generation smoke checks
 
 ### Remaining Operational Checks
 
