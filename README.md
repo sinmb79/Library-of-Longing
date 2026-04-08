@@ -38,6 +38,7 @@ flowchart LR
 | C5 | `scripts/thumbnail_gen.py` | 썸네일 이미지 렌더 및 변형 workflow 생성 | 완료 |
 | C6 | `scripts/youtube_upload.py` | YouTube 업로드 dry-run / live 경로 | 완료 |
 | C7 | `n8n/library_of_longing_pipeline.json` | 전체 파이프라인 자동화 워크플로 | 완료 |
+| C9.1 | `scripts/audio_sourcing/freesound_fetcher.py` | Freesound CC0 검색, 프리뷰/메타데이터 캐시, MANIFEST 기록 | 완료 |
 
 ## 저장소에 포함한 파일과 제외한 파일
 
@@ -307,6 +308,8 @@ python scripts/video_compositor.py --scene scenes/001_grandma_porch_summer.yaml 
 python scripts/assemble_final.py --scene scenes/001_grandma_porch_summer.yaml --video output/video/demo_10h.mp4 --audio output/audio/grandma_porch_mix.wav --output output/final/grandma_porch_final.mp4
 python scripts/thumbnail_gen.py --scene scenes/001_grandma_porch_summer.yaml --base-image output/video/demo_still.png --output output/thumbnails/grandma_porch.jpg --write-template workflows/thumbnail.json --uploaded-image-name grandma_porch_still.png
 python scripts/youtube_upload.py --video output/final/grandma_porch_final.mp4 --metadata output/final/grandma_porch_final.youtube.json --thumbnail output/thumbnails/grandma_porch.jpg
+python scripts/audio_sourcing/freesound_fetcher.py search --query cicada --min-duration 5 --max-duration 20 --max-results 3
+python scripts/audio_sourcing/freesound_fetcher.py cache --sound-id 824924 --output-dir audio_sources/smoke
 ```
 
 ## 테스트 및 검증
@@ -315,11 +318,12 @@ python scripts/youtube_upload.py --video output/final/grandma_porch_final.mp4 --
 
 | 항목 | 결과 |
 |------|------|
-| 전체 테스트 | `pytest tests -v` 기준 `23 passed` |
+| 전체 테스트 | `pytest tests -v` 기준 `27 passed` |
 | C3 스모크 | 실제 FFmpeg 2초 합성 확인 |
 | C4 스모크 | 실제 mux + metadata JSON 생성 확인 |
 | C5 스모크 | 실제 JPG 썸네일 생성 확인 |
 | C6 스모크 | 실제 dry-run JSON 출력 확인 |
+| C9.1 스모크 | Freesound CC0 검색 + 실제 MP3 캐시 + MANIFEST 생성 확인 |
 | Google API 패키지 | import 확인 |
 
 테스트 실행:
@@ -379,16 +383,18 @@ Library of Longing is a production pipeline for long-form ambience videos. A sin
 | `scripts/assemble_final.py` | Merge video/audio and write sidecar metadata |
 | `scripts/thumbnail_gen.py` | Render final thumbnails and write thumbnail workflows |
 | `scripts/youtube_upload.py` | Build YouTube upload requests, dry-run by default |
+| `scripts/audio_sourcing/freesound_fetcher.py` | Search Freesound CC0 audio, cache previews, and write provenance manifests |
 | `n8n/library_of_longing_pipeline.json` | Orchestrate the end-to-end flow |
 
 ### Verification
 
 The repository currently passes:
 
-- `pytest tests -v` with `23 passed`
+- `pytest tests -v` with `27 passed`
 - real FFmpeg smoke runs for composition and final assembly
 - real thumbnail JPG rendering
 - real YouTube dry-run JSON output
+- real Freesound CC0 search and preview cache smoke checks
 
 ### Remaining Operational Checks
 
