@@ -263,7 +263,7 @@ def build_video_workflow(
         "2": {
             "class_type": "WanVideoModelLoader",
             "inputs": {
-                "model": r"LowNoise\Wan2.2-T2V-A14B-LowNoise-Q4_K_M.gguf",
+                "model": r"a2v\SkyReels-v3-a2v-Q4_K_M.gguf",
                 "base_precision": "fp16",
                 "quantization": "disabled",
                 "load_device": "offload_device",

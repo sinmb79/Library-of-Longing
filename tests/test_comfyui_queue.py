@@ -36,6 +36,7 @@ def test_build_video_workflow_uses_uploaded_image_and_wan_nodes() -> None:
 
     assert workflow["1"]["class_type"] == "LoadImage"
     assert workflow["1"]["inputs"]["image"] == "uploaded_scene.png"
+    assert workflow["2"]["inputs"]["model"] == r"a2v\SkyReels-v3-a2v-Q4_K_M.gguf"
     assert workflow["8"]["class_type"] == "WanVideoImageToVideoEncode"
     assert workflow["8"]["inputs"]["start_image"] == ["1", 0]
     assert workflow["8"]["inputs"]["end_image"] == ["1", 0]

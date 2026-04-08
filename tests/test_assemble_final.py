@@ -67,6 +67,21 @@ def test_build_youtube_metadata_from_scene() -> None:
     assert metadata["tags"] == scene["metadata"]["tags"]
 
 
+def test_build_youtube_metadata_marks_short_renders_as_prototypes() -> None:
+    scene = load_scene_config(PROJECT_ROOT / "scenes" / "001_grandma_porch_summer.yaml")
+
+    metadata = build_youtube_metadata(
+        scene,
+        final_video_path=Path("output/final/grandma_prototype.mp4"),
+        duration_sec=60,
+    )
+
+    assert metadata["title"].endswith("| 1분 프로토타입")
+    assert metadata["title_en"].endswith("| 1 Minute Prototype")
+    assert "프로토타입 길이: 1분" in metadata["description"]
+    assert "Prototype length: 1 Minute" in metadata["description"]
+
+
 def test_build_mux_command_sets_expected_ffmpeg_flags() -> None:
     cmd = build_mux_command(
         video_path=Path("video.mp4"),
@@ -105,7 +120,8 @@ def test_assemble_final_creates_muxed_output_and_sidecars(tmp_path: Path) -> Non
     thumb_request = json.loads(result["thumbnail_request_json"].read_text(encoding="utf-8"))
 
     assert payload["thumbnailPath"].endswith("thumb.jpg")
-    assert thumb_request["title"]["ko"] == scene["metadata"]["title"]["ko"]
+    assert thumb_request["title"]["ko"].endswith("| 1초 프로토타입")
+    assert thumb_request["durationLabel"] == {"ko": "1초 프로토타입", "en": "1 Second Prototype"}
 
 
 def test_build_thumbnail_request_includes_scene_identity() -> None:
@@ -115,3 +131,13 @@ def test_build_thumbnail_request_includes_scene_identity() -> None:
 
     assert request["scene"]["id"] == "001"
     assert request["baseImagePath"].endswith("still.png")
+
+
+def test_build_thumbnail_request_uses_short_duration_label_for_prototypes() -> None:
+    scene = load_scene_config(PROJECT_ROOT / "scenes" / "001_grandma_porch_summer.yaml")
+
+    request = build_thumbnail_request(scene, base_image_path=Path("output/video/still.png"), duration_sec=60)
+
+    assert request["durationLabel"] == {"ko": "1분 프로토타입", "en": "1 Minute Prototype"}
+    assert request["title"]["ko"].endswith("| 1분 프로토타입")
+    assert request["title"]["en"].endswith("| 1 Minute Prototype")

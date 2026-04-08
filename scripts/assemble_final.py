@@ -58,16 +58,102 @@ def build_mux_command(*, video_path: Path, audio_path: Path, output_path: Path) 
     ]
 
 
-def _description_text(scene_config: dict[str, Any]) -> str:
+def _strip_duration_suffix(title: str) -> str:
+    return title.split("|", 1)[0].strip()
+
+
+def _format_duration_value(duration_sec: float) -> dict[str, str]:
+    rounded = max(1, int(round(duration_sec)))
+    if rounded >= 3600 and rounded % 3600 == 0:
+        hours = rounded // 3600
+        return {
+            "ko": f"{hours}\uC2DC\uAC04",
+            "en": f"{hours} Hour" if hours == 1 else f"{hours} Hours",
+        }
+    if rounded >= 60 and rounded % 60 == 0:
+        minutes = rounded // 60
+        return {
+            "ko": f"{minutes}\uBD84",
+            "en": f"{minutes} Minute" if minutes == 1 else f"{minutes} Minutes",
+        }
+    return {
+        "ko": f"{rounded}\uCD08",
+        "en": f"{rounded} Second" if rounded == 1 else f"{rounded} Seconds",
+    }
+
+
+def _full_length_duration_label(scene_config: dict[str, Any]) -> dict[str, str]:
+    hours = int(scene_config.get("video", {}).get("target_duration_hours", 10))
+    return {
+        "ko": f"{hours}\uC2DC\uAC04",
+        "en": f"{hours} Hour" if hours == 1 else f"{hours} Hours",
+    }
+
+
+def _resolve_duration_context(scene_config: dict[str, Any], duration_sec: float | None) -> dict[str, Any]:
     metadata = scene_config["metadata"]
-    return (
-        f"{metadata['title']['ko']}\n"
-        f"{metadata['title']['en']}\n\n"
-        f"{metadata['description']['ko']}\n\n"
-        f"{metadata['description']['en']}\n\n"
-        f"Storyline (KO): {metadata['storyline']['ko']}\n\n"
-        f"Storyline (EN): {metadata['storyline']['en']}"
+    if duration_sec is None:
+        return {
+            "title_ko": metadata["title"]["ko"],
+            "title_en": metadata["title"]["en"],
+            "duration_label": _full_length_duration_label(scene_config),
+            "prototype_note": None,
+            "is_prototype": False,
+        }
+
+    target_hours = float(scene_config.get("video", {}).get("target_duration_hours", 0))
+    target_duration_sec = target_hours * 3600
+    is_prototype = bool(target_duration_sec and duration_sec < target_duration_sec * 0.95)
+    if not is_prototype:
+        return {
+            "title_ko": metadata["title"]["ko"],
+            "title_en": metadata["title"]["en"],
+            "duration_label": _full_length_duration_label(scene_config),
+            "prototype_note": None,
+            "is_prototype": False,
+        }
+
+    short_label = _format_duration_value(duration_sec)
+    prototype_label = {
+        "ko": f"{short_label['ko']} \uD504\uB85C\uD1A0\uD0C0\uC785",
+        "en": f"{short_label['en']} Prototype",
+    }
+    return {
+        "title_ko": f"{_strip_duration_suffix(metadata['title']['ko'])} | {prototype_label['ko']}",
+        "title_en": f"{_strip_duration_suffix(metadata['title']['en'])} | {prototype_label['en']}",
+        "duration_label": prototype_label,
+        "prototype_note": {
+            "ko": f"\uD504\uB85C\uD1A0\uD0C0\uC785 \uAE38\uC774: {short_label['ko']}",
+            "en": f"Prototype length: {short_label['en']}",
+        },
+        "is_prototype": True,
+    }
+
+
+def _description_text(
+    scene_config: dict[str, Any],
+    *,
+    title_ko: str,
+    title_en: str,
+    prototype_note: dict[str, str] | None,
+) -> str:
+    metadata = scene_config["metadata"]
+    lines = [title_ko, title_en]
+    if prototype_note is not None:
+        lines.extend(["", prototype_note["ko"], prototype_note["en"]])
+    lines.extend(
+        [
+            "",
+            metadata["description"]["ko"],
+            "",
+            metadata["description"]["en"],
+            "",
+            f"Storyline (KO): {metadata['storyline']['ko']}",
+            "",
+            f"Storyline (EN): {metadata['storyline']['en']}",
+        ]
     )
+    return "\n".join(lines)
 
 
 def build_youtube_metadata(
@@ -75,14 +161,21 @@ def build_youtube_metadata(
     *,
     final_video_path: Path,
     thumbnail_path: Path | None = None,
+    duration_sec: float | None = None,
 ) -> dict[str, Any]:
     metadata = scene_config["metadata"]
+    duration_context = _resolve_duration_context(scene_config, duration_sec)
     return {
         "sceneId": scene_config["scene"]["id"],
         "slug": scene_config["scene"]["slug"],
-        "title": metadata["title"]["ko"],
-        "title_en": metadata["title"]["en"],
-        "description": _description_text(scene_config),
+        "title": duration_context["title_ko"],
+        "title_en": duration_context["title_en"],
+        "description": _description_text(
+            scene_config,
+            title_ko=duration_context["title_ko"],
+            title_en=duration_context["title_en"],
+            prototype_note=duration_context["prototype_note"],
+        ),
         "tags": metadata["tags"],
         "storyline": metadata["storyline"],
         "categoryId": "10",
@@ -94,18 +187,30 @@ def build_youtube_metadata(
         "videoPath": final_video_path.resolve().as_posix(),
         "culture": metadata["culture"],
         "season": metadata["season"],
+        "durationSec": duration_sec,
+        "durationLabel": duration_context["duration_label"],
+        "isPrototype": duration_context["is_prototype"],
     }
 
 
-def build_thumbnail_request(scene_config: dict[str, Any], *, base_image_path: Path | None = None) -> dict[str, Any]:
-    metadata = scene_config["metadata"]
+def build_thumbnail_request(
+    scene_config: dict[str, Any],
+    *,
+    base_image_path: Path | None = None,
+    duration_sec: float | None = None,
+) -> dict[str, Any]:
+    duration_context = _resolve_duration_context(scene_config, duration_sec)
     return {
         "scene": scene_config["scene"],
-        "title": metadata["title"],
-        "durationLabel": {"ko": "10시간", "en": "10 Hours"},
+        "title": {
+            "ko": duration_context["title_ko"],
+            "en": duration_context["title_en"],
+        },
+        "durationLabel": duration_context["duration_label"],
         "baseImagePath": base_image_path.resolve().as_posix() if base_image_path else None,
         "style": scene_config["visual"]["style"],
         "resolution": [1280, 720],
+        "isPrototype": duration_context["is_prototype"],
     }
 
 
@@ -139,17 +244,27 @@ def assemble_final(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     _run_ffmpeg(build_mux_command(video_path=video_path, audio_path=audio_path, output_path=output_path))
+    final_duration_sec = get_duration(output_path)
 
     metadata_path = metadata_output_path or output_path.with_suffix(".youtube.json")
     thumbnail_request_path = thumbnail_request_output_path or output_path.with_suffix(".thumbnail_request.json")
 
     _write_json(
         metadata_path,
-        build_youtube_metadata(scene_config, final_video_path=output_path, thumbnail_path=thumbnail_path),
+        build_youtube_metadata(
+            scene_config,
+            final_video_path=output_path,
+            thumbnail_path=thumbnail_path,
+            duration_sec=final_duration_sec,
+        ),
     )
     _write_json(
         thumbnail_request_path,
-        build_thumbnail_request(scene_config, base_image_path=base_image_path or thumbnail_path),
+        build_thumbnail_request(
+            scene_config,
+            base_image_path=base_image_path or thumbnail_path,
+            duration_sec=final_duration_sec,
+        ),
     )
 
     return {
