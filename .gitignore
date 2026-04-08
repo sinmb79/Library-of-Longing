@@ -25,6 +25,9 @@ docs/superpowers/
 output/
 audio_sources/
 
+# Local experimental scripts
+scripts/test_stable_audio.py
+
 # OS and editor noise
 .DS_Store
 Thumbs.db
