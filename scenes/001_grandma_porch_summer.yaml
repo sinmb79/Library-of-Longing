@@ -12,6 +12,8 @@ visual:
     neon light, text, watermark, low quality, blurry
   style: "ghibli"
   resolution: [3840, 2160]
+  loop_generation_resolution: [1280, 720]
+  upscale_model: "4x-UltraSharp"
   loop_duration_sec: 8
   motion_prompt: >
     gentle fan spinning, light breeze moving curtain slightly,

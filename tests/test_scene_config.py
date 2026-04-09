@@ -115,3 +115,62 @@ def test_scene_config_accepts_optional_audio_sourcing_and_gen_alias(tmp_path: Pa
     assert "gen" not in config["audio"]["layers"]["continuous"]
     assert config["audio"]["layers"]["periodic"]["sourcing"]["queries"] == ["summer cicada chorus"]
     assert config["audio"]["layers"]["rare_events"]["sourcing"]["prompt"].startswith("isolated ceramic")
+
+
+def test_scene_config_accepts_loop_generation_resolution_and_upscale_model(tmp_path: Path) -> None:
+    scene_path = tmp_path / "scene_with_loop_resolution.yaml"
+    scene_path.write_text(
+        yaml.safe_dump(
+            {
+                "scene": {"id": "998", "slug": "loop-resolution-test"},
+                "visual": {
+                    "prompt": "demo prompt",
+                    "negative_prompt": "demo negative",
+                    "style": "ghibli",
+                    "resolution": [3840, 2160],
+                    "loop_duration_sec": 8,
+                    "motion_prompt": "gentle dust",
+                    "loop_generation_resolution": [1920, 1080],
+                    "upscale_model": "4x-UltraSharp",
+                },
+                "audio": {
+                    "layers": {
+                        "room_tone": {"source": "./audio_sources/demo/room_tone.wav", "volume": 0.25},
+                        "continuous": {"source": "./audio_sources/demo/fan_loop.wav", "volume": 0.4},
+                        "periodic": {
+                            "sources": ["./audio_sources/demo/cicada_a.wav"],
+                            "interval": [20, 30],
+                            "volume": 0.5,
+                        },
+                        "rare_events": {
+                            "sources": ["./audio_sources/demo/kitchen_clink.wav"],
+                            "interval": [120, 300],
+                            "volume": 0.35,
+                        },
+                    }
+                },
+                "video": {
+                    "target_duration_hours": 1,
+                    "film_grain": 10,
+                    "vignette": True,
+                    "time_lapse": False,
+                },
+                "metadata": {
+                    "title": {"ko": "테스트", "en": "Test"},
+                    "description": {"ko": "설명", "en": "Description"},
+                    "tags": ["test"],
+                    "storyline": {"ko": "이야기", "en": "Story"},
+                    "culture": "KR",
+                    "season": "summer",
+                },
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_scene_config(scene_path)
+
+    assert config["visual"]["loop_generation_resolution"] == [1920, 1080]
+    assert config["visual"]["upscale_model"] == "4x-UltraSharp"

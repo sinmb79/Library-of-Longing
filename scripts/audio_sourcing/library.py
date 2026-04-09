@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import shutil
 import sys
 from datetime import UTC, datetime
@@ -50,6 +51,20 @@ PROCEDURAL_MAP = {
     "hum": "hum",
 }
 STABLE_KEYWORDS = {"glass", "clink", "kitchen", "cup", "ice", "plate"}
+EXPECTED_FORMATS = {
+    ".wav": {"WAV"},
+    ".mp3": {"MP3"},
+    ".flac": {"FLAC"},
+}
+PROVIDER_BY_TIER = {
+    "freesound_cc0": "freesound",
+    "nps_pd": "nps",
+    "archive_pd": "archive.org",
+    "procedural": "procedural",
+    "stable_audio": "stable_audio",
+    "local_existing": "local_existing",
+}
+logger = logging.getLogger(__name__)
 
 
 def _sha256(path: Path) -> str:
@@ -65,6 +80,51 @@ def _relative_path(path: Path) -> str:
             index = parts.index("audio_sources")
             return Path(*parts[index:]).as_posix()
         return path.resolve().as_posix()
+
+
+def _sidecar_path(audio_path: Path) -> Path:
+    return audio_path.with_suffix(".json")
+
+
+def _read_existing_sidecar(audio_path: Path) -> dict[str, Any] | None:
+    sidecar_path = _sidecar_path(audio_path)
+    if not sidecar_path.exists():
+        return None
+    try:
+        payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        logger.warning("Rejecting invalid provenance sidecar for %s: %s", audio_path, exc)
+        return None
+    license_value = str(payload.get("license", "")).strip()
+    if not license_value:
+        logger.warning("Rejecting provenance sidecar without license for %s", audio_path)
+        return None
+    return payload
+
+
+def _cleanup_target_family(target_path: Path) -> None:
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    for sibling in target_path.parent.glob(f"{target_path.stem}.*"):
+        if sibling.suffix.lower() not in EXPECTED_FORMATS and sibling.suffix.lower() != ".json":
+            continue
+        if sibling.exists():
+            sibling.unlink()
+
+
+def _write_provenance_sidecar(audio_path: Path, *, tier: str, metadata: dict[str, Any]) -> dict[str, Any]:
+    payload = {key: value for key, value in metadata.items() if value is not None}
+    payload.setdefault("provider", PROVIDER_BY_TIER.get(tier, tier))
+    payload.setdefault("tier", tier)
+    payload.setdefault("original_title", audio_path.name)
+    payload.setdefault("origin_url", "")
+    payload.setdefault("author", "")
+    payload["license"] = str(payload.get("license", "")).strip()
+    payload["sha256"] = _sha256(audio_path)
+    payload["stored_path"] = _relative_path(audio_path)
+    payload["stored_at"] = datetime.now(UTC).isoformat()
+    sidecar_path = _sidecar_path(audio_path)
+    sidecar_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return payload
 
 
 def _layer_targets(scene_config: dict[str, Any]) -> list[dict[str, Any]]:
@@ -205,11 +265,24 @@ def _record_entry(
 
 
 def _is_usable_audio(path: Path) -> bool:
-    if not path.exists() or path.stat().st_size < 4096:
+    if not path.exists():
+        return False
+    if path.stat().st_size < 4096:
+        logger.warning("Rejecting legacy_stub audio for %s (size=%s)", path, path.stat().st_size)
         return False
     try:
         info = sf.info(path)
-    except Exception:
+    except Exception as exc:
+        logger.warning("Rejecting undecodable audio for %s: %s", path, exc)
+        return False
+    expected_formats = EXPECTED_FORMATS.get(path.suffix.lower())
+    if expected_formats is not None and info.format not in expected_formats:
+        logger.warning(
+            "Rejecting mismatched audio for %s: expected %s, got %s",
+            path,
+            sorted(expected_formats),
+            info.format,
+        )
         return False
     return info.frames > 0 and info.samplerate > 0 and info.channels >= 1
 
@@ -229,6 +302,8 @@ def _acquire_with_freesound(
     if not dry_run:
         download_sound(selected["sound_id"], target_path)
     return {
+        "provider": "freesound",
+        "sound_id": selected["sound_id"],
         "license": selected["license"],
         "origin_url": selected["url"],
         "author": selected["author"],
@@ -246,6 +321,7 @@ def _acquire_with_nps(query: str, target_path: Path, *, dry_run: bool) -> dict[s
         downloaded = download_nps(match, target_path.parent, output_filename=target_path.name)
         _move_into_place(downloaded, target_path)
     return {
+        "provider": "nps",
         "license": "US Public Domain",
         "origin_url": match["page_url"],
         "author": "National Park Service",
@@ -262,6 +338,7 @@ def _acquire_with_archive(query: str, target_path: Path, *, dry_run: bool) -> di
             if not metadata["allowed_license"]:
                 continue
             return {
+                "provider": "archive.org",
                 "license": metadata["license"],
                 "origin_url": metadata["origin_url"],
                 "author": metadata["creator"],
@@ -282,6 +359,7 @@ def _acquire_with_archive(query: str, target_path: Path, *, dry_run: bool) -> di
         sidecar_path = target_path.with_suffix(".json")
         sidecar = json.loads(sidecar_path.read_text(encoding="utf-8")) if sidecar_path.exists() else {}
         return {
+            "provider": "archive.org",
             "license": sidecar.get("license", "Public Domain"),
             "origin_url": sidecar.get("origin_url", ""),
             "author": sidecar.get("creator", doc.get("creator", "")),
@@ -308,9 +386,10 @@ def _acquire_with_procedural(
     if not dry_run:
         write_procedural_wav(generator, target_path, duration=duration, seed=seed, **params)
     return {
+        "provider": "procedural",
         "generator": generator,
         "params": params,
-        "license": "Synthetic / Internal",
+        "license": "Procedural",
         "origin_url": "",
         "duration_sec": duration,
         "seed": seed,
@@ -331,7 +410,8 @@ def _acquire_with_stable(
     if not dry_run:
         generate_sfx(prompt=prompt, duration=duration, seed=seed, output_path=target_path)
     return {
-        "license": "Synthetic / Internal",
+        "provider": "stable_audio",
+        "license": "Stable Audio",
         "origin_url": "",
         "prompt": prompt,
         "seed": seed,
@@ -433,14 +513,13 @@ def populate_scene_audio_sources(
         target_path = target["target_path"]
         layer_config = target["layer_config"]
         source_index = target["source_index"]
-        relative_key = _relative_path(target_path)
-
-        if _is_usable_audio(target_path) and not force:
+        existing_sidecar = _read_existing_sidecar(target_path) if _is_usable_audio(target_path) and not force else None
+        if existing_sidecar is not None:
             _record_entry(
                 manifest,
                 target_path,
                 tier="local_existing",
-                metadata={"license": "Local File", "origin_url": "", "author": "", "original_title": target_path.name},
+                metadata=existing_sidecar,
                 dry_run=dry_run,
             )
             continue
@@ -448,6 +527,8 @@ def populate_scene_audio_sources(
         sourcing = _sourcing_config(layer_config)
         default_query = _infer_query(target_path)
         query = _pick_query(default_query, sourcing, source_index)
+        if not dry_run:
+            _cleanup_target_family(target_path)
         tier, metadata = _acquire_explicit(
             layer_name,
             query,
@@ -467,6 +548,9 @@ def populate_scene_audio_sources(
                 sourcing=sourcing,
                 dry_run=dry_run,
             )
+
+        if not dry_run and target_path.exists():
+            metadata = _write_provenance_sidecar(target_path, tier=tier, metadata=metadata)
 
         _record_entry(manifest, target_path, tier=tier, metadata=metadata, dry_run=dry_run)
         per_target_seed += 1

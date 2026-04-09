@@ -54,6 +54,19 @@ properties:
       motion_prompt:
         type: string
         minLength: 1
+      loop_generation_resolution:
+        type: array
+        minItems: 2
+        maxItems: 2
+        description: "Override Wan loop generation resolution. Default: [1280, 720]"
+        prefixItems:
+          - type: integer
+            minimum: 256
+          - type: integer
+            minimum: 256
+      upscale_model:
+        type: string
+        enum: ["4x-UltraSharp", "none"]
   audio:
     type: object
     additionalProperties: false

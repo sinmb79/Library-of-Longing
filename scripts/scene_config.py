@@ -62,6 +62,10 @@ def normalize_scene_config(raw_config: dict[str, Any], source_path: Path) -> dic
 
     config["visual"]["resolution"] = [int(config["visual"]["resolution"][0]), int(config["visual"]["resolution"][1])]
     config["visual"]["loop_duration_sec"] = int(config["visual"]["loop_duration_sec"])
+    config["visual"]["loop_generation_resolution"] = [
+        int(value) for value in config["visual"].get("loop_generation_resolution", [1280, 720])
+    ]
+    config["visual"]["upscale_model"] = str(config["visual"].get("upscale_model", "4x-UltraSharp"))
     config["video"]["target_duration_hours"] = int(config["video"]["target_duration_hours"])
     config["video"]["film_grain"] = int(config["video"]["film_grain"])
     config["video"]["vignette"] = bool(config["video"]["vignette"])

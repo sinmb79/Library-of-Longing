@@ -1,5 +1,5 @@
 {
-  "scene_path": "C:/Users/sinmb/workspace/Library-of-Londing/scenes/001_grandma_porch_summer.yaml",
+  "scene_path": "C:/Users/sinmb/workspace/Library-of-Londing/.worktrees/phase5-quality-fixes/scenes/001_grandma_porch_summer.yaml",
   "scene_id": "001",
   "scene_slug": "grandma-porch-summer",
   "image_seed": 101,
@@ -158,7 +158,7 @@
     "6": {
       "class_type": "WanVideoBlockSwap",
       "inputs": {
-        "blocks_to_swap": 20,
+        "blocks_to_swap": 28,
         "offload_txt_emb": false,
         "offload_img_emb": false
       }
@@ -179,8 +179,8 @@
     "8": {
       "class_type": "WanVideoImageToVideoEncode",
       "inputs": {
-        "width": 848,
-        "height": 480,
+        "width": 1280,
+        "height": 720,
         "num_frames": 132,
         "noise_aug_strength": 0.02,
         "start_latent_strength": 1.0,
@@ -246,7 +246,7 @@
       "class_type": "VHS_VideoCombine",
       "inputs": {
         "images": [
-          "12",
+          "14",
           0
         ],
         "frame_rate": 16,
@@ -277,6 +277,25 @@
         "tile_y": 272,
         "tile_stride_x": 144,
         "tile_stride_y": 128
+      }
+    },
+    "13": {
+      "class_type": "UpscaleModelLoader",
+      "inputs": {
+        "model_name": "4x-UltraSharp.pth"
+      }
+    },
+    "14": {
+      "class_type": "ImageUpscaleWithModel",
+      "inputs": {
+        "upscale_model": [
+          "13",
+          0
+        ],
+        "image": [
+          "12",
+          0
+        ]
       }
     }
   }

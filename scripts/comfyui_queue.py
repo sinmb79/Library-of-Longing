@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import math
 import time
 from dataclasses import dataclass
@@ -23,6 +24,10 @@ DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "output" / "video"
 DEFAULT_TEMPLATE_PATH = PROJECT_ROOT / "workflows" / "ambient_scene.json"
 DEFAULT_POLL_INTERVAL = 2.0
 DEFAULT_TIMEOUT_SEC = 1800
+DEFAULT_LOOP_GENERATION_RESOLUTION = (1280, 720)
+DEFAULT_UPSCALE_MODEL = "4x-UltraSharp"
+VRAM_PIXEL_BUDGET = 300_000_000
+FALLBACK_LOOP_RESOLUTION = (912, 512)
 
 STYLE_PRESETS = {
     "ghibli": {
@@ -44,6 +49,7 @@ STYLE_PRESETS = {
         "strength_clip": 0.8,
     },
 }
+logger = logging.getLogger(__name__)
 
 
 @dataclass(eq=True, frozen=True)
@@ -148,22 +154,78 @@ def _video_negative_prompt(scene_config: dict[str, Any]) -> str:
     )
 
 
-def derive_video_resolution(resolution: list[int], max_width: int = 848, max_height: int = 480) -> tuple[int, int]:
+def _snap_down(value: float, multiple: int = 16) -> int:
+    snapped = int(value) // multiple * multiple
+    return max(64, snapped)
+
+
+def _fit_resolution(resolution: list[int], *, max_width: int, max_height: int) -> tuple[int, int]:
     width, height = int(resolution[0]), int(resolution[1])
     aspect = width / height
-    if width >= height:
-        target_height = max_height
-        target_width = int(round((target_height * aspect) / 16.0) * 16)
-        if target_width > max_width:
-            target_width = max_width
-            target_height = int(round((target_width / aspect) / 16.0) * 16)
-    else:
-        target_width = max_height
-        target_height = int(round((target_width / aspect) / 16.0) * 16)
-        if target_height > max_width:
-            target_height = max_width
-            target_width = int(round((target_height * aspect) / 16.0) * 16)
-    return max(64, target_width), max(64, target_height)
+    candidates: list[tuple[int, int]] = []
+
+    width_candidate = (_snap_down(min(max_width, width)), _snap_down(min(max_width, width) / aspect))
+    if width_candidate[0] <= max_width and width_candidate[1] <= max_height:
+        candidates.append(width_candidate)
+
+    height_candidate = (_snap_down(min(max_height, height) * aspect), _snap_down(min(max_height, height)))
+    if height_candidate[0] <= max_width and height_candidate[1] <= max_height:
+        candidates.append(height_candidate)
+
+    if not candidates:
+        return max(64, _snap_down(max_width)), max(64, _snap_down(max_height))
+    return max(candidates, key=lambda item: item[0] * item[1])
+
+
+def derive_video_resolution(
+    resolution: list[int],
+    max_width: int = DEFAULT_LOOP_GENERATION_RESOLUTION[0],
+    max_height: int = DEFAULT_LOOP_GENERATION_RESOLUTION[1],
+    *,
+    num_frames: int | None = None,
+    vram_pixel_budget: int = VRAM_PIXEL_BUDGET,
+    fallback_width: int = FALLBACK_LOOP_RESOLUTION[0],
+    fallback_height: int = FALLBACK_LOOP_RESOLUTION[1],
+) -> tuple[int, int]:
+    target_width, target_height = _fit_resolution(resolution, max_width=max_width, max_height=max_height)
+    if num_frames is not None and target_width * target_height * num_frames > vram_pixel_budget:
+        fallback = _fit_resolution(resolution, max_width=fallback_width, max_height=fallback_height)
+        logger.warning(
+            "Wan loop resolution %sx%s exceeds VRAM budget for %s frames; falling back to %sx%s.",
+            target_width,
+            target_height,
+            num_frames,
+            fallback[0],
+            fallback[1],
+        )
+        return fallback
+    return target_width, target_height
+
+
+def _blocks_to_swap_for_resolution(height: int) -> int:
+    if height >= 960:
+        return 30
+    if height >= 720:
+        return 28
+    if height >= 640:
+        return 25
+    return 20
+
+
+def _loop_generation_target(scene_config: dict[str, Any]) -> tuple[int, int]:
+    target = scene_config["visual"].get("loop_generation_resolution")
+    if target:
+        return int(target[0]), int(target[1])
+    return DEFAULT_LOOP_GENERATION_RESOLUTION
+
+
+def _upscale_model_filename(scene_config: dict[str, Any]) -> str | None:
+    name = str(scene_config["visual"].get("upscale_model") or DEFAULT_UPSCALE_MODEL).strip()
+    if not name or name == "none":
+        return None
+    if name.lower().endswith(".pth"):
+        return name
+    return f"{name}.pth"
 
 
 def _loop_frame_count(loop_duration_sec: int, frame_rate: int = 16) -> int:
@@ -251,9 +313,18 @@ def build_video_workflow(
     seed: int,
     output_prefix: str,
 ) -> dict[str, dict[str, Any]]:
-    width, height = derive_video_resolution(scene_config["visual"]["resolution"])
     num_frames = _loop_frame_count(scene_config["visual"]["loop_duration_sec"])
-    return {
+    max_width, max_height = _loop_generation_target(scene_config)
+    width, height = derive_video_resolution(
+        scene_config["visual"]["resolution"],
+        max_width=max_width,
+        max_height=max_height,
+        num_frames=num_frames,
+    )
+    blocks_to_swap = _blocks_to_swap_for_resolution(height)
+    upscale_model_name = _upscale_model_filename(scene_config)
+    video_input_node = ["12", 0]
+    workflow: dict[str, dict[str, Any]] = {
         "1": {
             "class_type": "LoadImage",
             "inputs": {
@@ -299,7 +370,7 @@ def build_video_workflow(
         "6": {
             "class_type": "WanVideoBlockSwap",
             "inputs": {
-                "blocks_to_swap": 20,
+                "blocks_to_swap": blocks_to_swap,
                 "offload_txt_emb": False,
                 "offload_img_emb": False,
             },
@@ -362,7 +433,7 @@ def build_video_workflow(
         "11": {
             "class_type": "VHS_VideoCombine",
             "inputs": {
-                "images": ["12", 0],
+                "images": video_input_node,
                 "frame_rate": 16,
                 "loop_count": 0,
                 "filename_prefix": f"{output_prefix}_loop",
@@ -388,6 +459,22 @@ def build_video_workflow(
             },
         },
     }
+    if upscale_model_name:
+        workflow["13"] = {
+            "class_type": "UpscaleModelLoader",
+            "inputs": {
+                "model_name": upscale_model_name,
+            },
+        }
+        workflow["14"] = {
+            "class_type": "ImageUpscaleWithModel",
+            "inputs": {
+                "upscale_model": ["13", 0],
+                "image": ["12", 0],
+            },
+        }
+        workflow["11"]["inputs"]["images"] = ["14", 0]
+    return workflow
 
 
 def extract_output_files(history: dict[str, Any], prompt_id: str) -> list[GeneratedArtifact]:

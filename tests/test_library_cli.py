@@ -72,6 +72,12 @@ def _write_valid_wav(path: Path, seconds: float = 0.25, sample_rate: int = 48_00
     return path
 
 
+def _write_sidecar(path: Path, payload: dict) -> Path:
+    sidecar = path.with_suffix(".json")
+    sidecar.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return sidecar
+
+
 def test_populate_scene_audio_sources_uses_all_acquisition_tiers(monkeypatch, tmp_path: Path) -> None:
     scene_path = _build_scene(tmp_path / "scene.yaml")
     manifest_path = tmp_path / "audio_sources" / "MANIFEST.json"
@@ -150,6 +156,16 @@ def test_populate_scene_audio_sources_skips_existing_files(monkeypatch, tmp_path
     scene_path = _build_scene(tmp_path / "scene.yaml")
     existing = tmp_path / "audio_sources" / "grandma_porch" / "room_tone.wav"
     _write_valid_wav(existing)
+    _write_sidecar(
+        existing,
+        {
+            "provider": "procedural",
+            "generator": "room_tone",
+            "license": "Procedural",
+            "origin_url": "",
+            "author": "",
+        },
+    )
 
     called: list[str] = []
 

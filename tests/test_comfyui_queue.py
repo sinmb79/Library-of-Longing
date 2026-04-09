@@ -8,6 +8,7 @@ from scripts.comfyui_queue import (
     GeneratedArtifact,
     build_image_workflow,
     build_video_workflow,
+    derive_video_resolution,
     extract_output_files,
     run_scene_generation,
 )
@@ -40,9 +41,15 @@ def test_build_video_workflow_uses_uploaded_image_and_wan_nodes() -> None:
     assert workflow["8"]["class_type"] == "WanVideoImageToVideoEncode"
     assert workflow["8"]["inputs"]["start_image"] == ["1", 0]
     assert workflow["8"]["inputs"]["end_image"] == ["1", 0]
-    assert workflow["8"]["inputs"]["width"] == 848
-    assert workflow["8"]["inputs"]["height"] == 480
+    assert workflow["8"]["inputs"]["width"] == 1280
+    assert workflow["8"]["inputs"]["height"] == 720
+    assert workflow["6"]["inputs"]["blocks_to_swap"] >= 25
+    assert workflow["13"]["class_type"] == "UpscaleModelLoader"
+    assert workflow["13"]["inputs"]["model_name"] == "4x-UltraSharp.pth"
+    assert workflow["14"]["class_type"] == "ImageUpscaleWithModel"
+    assert workflow["14"]["inputs"]["upscale_model"] == ["13", 0]
     assert workflow["11"]["class_type"] == "VHS_VideoCombine"
+    assert workflow["11"]["inputs"]["images"] == ["14", 0]
     assert workflow["11"]["inputs"]["filename_prefix"] == "demo_scene_loop"
 
 
@@ -137,3 +144,21 @@ def test_rendered_template_bundle_is_json_serializable() -> None:
 
     assert "image_workflow" in encoded
     assert "video_workflow" in encoded
+
+
+def test_derive_video_resolution_falls_back_under_vram_threshold() -> None:
+    width, height = derive_video_resolution([3840, 2160], num_frames=260, max_width=1920, max_height=1080)
+
+    assert (width, height) == (912, 512)
+
+
+def test_build_video_workflow_respects_scene_generation_override() -> None:
+    scene = load_scene_config(PROJECT_ROOT / "scenes" / "001_grandma_porch_summer.yaml")
+    scene["visual"]["loop_generation_resolution"] = [1920, 1080]
+
+    workflow = build_video_workflow(scene, uploaded_image_name="override.png", seed=808, output_prefix="override_scene")
+
+    assert workflow["8"]["inputs"]["width"] == 1920
+    assert workflow["8"]["inputs"]["height"] == 1072
+    assert workflow["6"]["inputs"]["blocks_to_swap"] >= 28
+    assert workflow["11"]["inputs"]["filename_prefix"] == "override_scene_loop"
