@@ -133,6 +133,57 @@ def test_run_scene_generation_uploads_stage1_image_before_video(tmp_path: Path) 
     assert fake_client.queued[1]["1"]["inputs"]["image"] == "uploaded_scene.png"
 
 
+def test_run_scene_generation_skips_image_stage_when_external_still_is_provided(tmp_path: Path) -> None:
+    scene_path = PROJECT_ROOT / "scenes" / "001_grandma_porch_summer.yaml"
+    external_still = tmp_path / "external_still.png"
+    external_still.write_bytes(b"png-data")
+    stage2_history = {
+        "prompt-video": {
+            "outputs": {
+                "11": {"gifs": [{"filename": "loop.mp4", "subfolder": "", "type": "output", "format": "video/h264-mp4"}]}
+            }
+        }
+    }
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.queued: list[dict] = []
+            self.uploaded: list[Path] = []
+            self.downloaded: list[tuple[str, Path]] = []
+
+        def queue_prompt(self, workflow: dict, client_id: str) -> str:
+            self.queued.append(workflow)
+            return "prompt-video"
+
+        def wait_for_history(self, prompt_id: str, timeout_sec: int, poll_interval: float) -> dict:
+            return stage2_history
+
+        def download_output(self, artifact: GeneratedArtifact, destination: Path) -> Path:
+            self.downloaded.append((artifact.filename, destination))
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(b"mp4-data")
+            return destination
+
+        def upload_image(self, image_path: Path, overwrite: bool = True) -> str:
+            self.uploaded.append(image_path)
+            return "uploaded_external_scene.png"
+
+    fake_client = FakeClient()
+    result = run_scene_generation(
+        scene_path,
+        output_dir=tmp_path,
+        client=fake_client,
+        timeout_sec=5,
+        still_image=external_still,
+    )
+
+    assert "image" not in result
+    assert result["video"].suffix == ".mp4"
+    assert fake_client.uploaded == [external_still]
+    assert len(fake_client.queued) == 1
+    assert fake_client.queued[0]["1"]["inputs"]["image"] == "uploaded_external_scene.png"
+
+
 def test_rendered_template_bundle_is_json_serializable() -> None:
     scene = load_scene_config(PROJECT_ROOT / "scenes" / "001_grandma_porch_summer.yaml")
     bundle = {

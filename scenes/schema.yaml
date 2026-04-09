@@ -54,6 +54,10 @@ properties:
       motion_prompt:
         type: string
         minLength: 1
+      still_image:
+        type: string
+        minLength: 1
+        description: "Optional external still image path. When present, ComfyUI still generation is skipped."
       loop_generation_resolution:
         type: array
         minItems: 2

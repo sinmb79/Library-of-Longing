@@ -126,6 +126,7 @@ visual:
   negative_prompt: "..."
   style: "ghibli"
   resolution: [3840, 2160]
+  still_image: "output/playwright/chatgpt-home.png"  # optional external still image
   loop_duration_sec: 8
   motion_prompt: "..."
 
@@ -315,6 +316,7 @@ video:
 python scripts/scene_config.py scenes/001_grandma_porch_summer.yaml --pretty
 python scripts/audio_mixer.py --scene scenes/001_grandma_porch_summer.yaml --output output/audio/grandma_porch_mix.wav
 python scripts/comfyui_queue.py --scene scenes/001_grandma_porch_summer.yaml --write-template workflows/ambient_scene.json --dry-run
+python scripts/comfyui_queue.py --scene scenes/001_grandma_porch_summer.yaml --still-image output/playwright/chatgpt-home.png --write-template workflows/ambient_scene.json --dry-run
 python scripts/video_compositor.py --scene scenes/001_grandma_porch_summer.yaml --loop-clip output/video/demo_loop.mp4 --output output/video/demo_10h.mp4 --dry-run
 python scripts/assemble_final.py --scene scenes/001_grandma_porch_summer.yaml --video output/video/demo_10h.mp4 --audio output/audio/grandma_porch_mix.wav --output output/final/grandma_porch_final.mp4
 python scripts/thumbnail_gen.py --scene scenes/001_grandma_porch_summer.yaml --base-image output/video/demo_still.png --output output/thumbnails/grandma_porch.jpg --write-template workflows/thumbnail.json --uploaded-image-name grandma_porch_still.png

@@ -1,111 +1,9 @@
 {
-  "scene_path": "C:/Users/sinmb/workspace/Library-of-Londing/.worktrees/phase5-quality-fixes/scenes/001_grandma_porch_summer.yaml",
+  "scene_path": "C:/Users/sinmb/workspace/Library-of-Londing/scenes/001_grandma_porch_summer.yaml",
   "scene_id": "001",
   "scene_slug": "grandma-porch-summer",
   "image_seed": 101,
   "video_seed": 202,
-  "image_workflow": {
-    "1": {
-      "class_type": "CheckpointLoaderSimple",
-      "inputs": {
-        "ckpt_name": "sd_xl_base_1.0.safetensors"
-      }
-    },
-    "2": {
-      "class_type": "LoraLoader",
-      "inputs": {
-        "model": [
-          "1",
-          0
-        ],
-        "clip": [
-          "1",
-          1
-        ],
-        "lora_name": "ghibli_style_sdxl.safetensors",
-        "strength_model": 0.85,
-        "strength_clip": 0.85
-      }
-    },
-    "3": {
-      "class_type": "CLIPTextEncode",
-      "inputs": {
-        "clip": [
-          "2",
-          1
-        ],
-        "text": "korean traditional hanok maru wooden floor, old electric fan spinning, summer afternoon sunlight through paper door, warm dust in the air, watercolor background, Studio Ghibli style, nostalgic atmosphere, 4k"
-      }
-    },
-    "4": {
-      "class_type": "CLIPTextEncode",
-      "inputs": {
-        "clip": [
-          "2",
-          1
-        ],
-        "text": "realistic photo, modern furniture, city apartment, dark, gloomy, neon light, text, watermark, low quality, blurry"
-      }
-    },
-    "5": {
-      "class_type": "EmptyLatentImage",
-      "inputs": {
-        "width": 3840,
-        "height": 2160,
-        "batch_size": 1
-      }
-    },
-    "6": {
-      "class_type": "KSampler",
-      "inputs": {
-        "model": [
-          "2",
-          0
-        ],
-        "positive": [
-          "3",
-          0
-        ],
-        "negative": [
-          "4",
-          0
-        ],
-        "latent_image": [
-          "5",
-          0
-        ],
-        "seed": 101,
-        "steps": 30,
-        "cfg": 7.0,
-        "sampler_name": "dpmpp_2m_sde",
-        "scheduler": "karras",
-        "denoise": 1.0
-      }
-    },
-    "7": {
-      "class_type": "VAEDecode",
-      "inputs": {
-        "samples": [
-          "6",
-          0
-        ],
-        "vae": [
-          "1",
-          2
-        ]
-      }
-    },
-    "8": {
-      "class_type": "SaveImage",
-      "inputs": {
-        "images": [
-          "7",
-          0
-        ],
-        "filename_prefix": "001_grandma-porch-summer_still"
-      }
-    }
-  },
   "video_workflow": {
     "1": {
       "class_type": "LoadImage",
@@ -296,6 +194,108 @@
           "12",
           0
         ]
+      }
+    }
+  },
+  "image_workflow": {
+    "1": {
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": {
+        "ckpt_name": "sd_xl_base_1.0.safetensors"
+      }
+    },
+    "2": {
+      "class_type": "LoraLoader",
+      "inputs": {
+        "model": [
+          "1",
+          0
+        ],
+        "clip": [
+          "1",
+          1
+        ],
+        "lora_name": "ghibli_style_sdxl.safetensors",
+        "strength_model": 0.85,
+        "strength_clip": 0.85
+      }
+    },
+    "3": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "clip": [
+          "2",
+          1
+        ],
+        "text": "korean traditional hanok maru wooden floor, old electric fan spinning, summer afternoon sunlight through paper door, warm dust in the air, watercolor background, Studio Ghibli style, nostalgic atmosphere, 4k"
+      }
+    },
+    "4": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "clip": [
+          "2",
+          1
+        ],
+        "text": "realistic photo, modern furniture, city apartment, dark, gloomy, neon light, text, watermark, low quality, blurry"
+      }
+    },
+    "5": {
+      "class_type": "EmptyLatentImage",
+      "inputs": {
+        "width": 3840,
+        "height": 2160,
+        "batch_size": 1
+      }
+    },
+    "6": {
+      "class_type": "KSampler",
+      "inputs": {
+        "model": [
+          "2",
+          0
+        ],
+        "positive": [
+          "3",
+          0
+        ],
+        "negative": [
+          "4",
+          0
+        ],
+        "latent_image": [
+          "5",
+          0
+        ],
+        "seed": 101,
+        "steps": 30,
+        "cfg": 7.0,
+        "sampler_name": "dpmpp_2m_sde",
+        "scheduler": "karras",
+        "denoise": 1.0
+      }
+    },
+    "7": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": [
+          "6",
+          0
+        ],
+        "vae": [
+          "1",
+          2
+        ]
+      }
+    },
+    "8": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "images": [
+          "7",
+          0
+        ],
+        "filename_prefix": "001_grandma-porch-summer_still"
       }
     }
   }

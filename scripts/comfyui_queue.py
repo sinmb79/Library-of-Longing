@@ -507,16 +507,31 @@ def _select_first_artifact(artifacts: list[GeneratedArtifact], *, kind: str) -> 
     raise FileNotFoundError(f"No {kind} artifact found in ComfyUI history.")
 
 
-def render_workflow_bundle(scene_path: Path, *, image_seed: int, video_seed: int) -> dict[str, Any]:
+def _resolve_still_image(scene_config: dict[str, Any], still_image: Path | None = None) -> Path | None:
+    if still_image is not None:
+        return still_image.resolve()
+    configured = scene_config["visual"].get("still_image_path")
+    if configured:
+        return Path(str(configured)).resolve()
+    return None
+
+
+def render_workflow_bundle(
+    scene_path: Path,
+    *,
+    image_seed: int,
+    video_seed: int,
+    still_image: Path | None = None,
+) -> dict[str, Any]:
     scene = load_scene_config(scene_path)
     base_prefix = f"{scene['scene']['id']}_{scene['scene']['slug']}"
-    return {
+    selected_still = _resolve_still_image(scene, still_image)
+    bundle = {
         "scene_path": scene_path.resolve().as_posix(),
         "scene_id": scene["scene"]["id"],
         "scene_slug": scene["scene"]["slug"],
         "image_seed": image_seed,
         "video_seed": video_seed,
-        "image_workflow": build_image_workflow(scene, seed=image_seed, output_prefix=base_prefix),
         "video_workflow": build_video_workflow(
             scene,
             uploaded_image_name="__UPLOADED_IMAGE__",
@@ -524,10 +539,22 @@ def render_workflow_bundle(scene_path: Path, *, image_seed: int, video_seed: int
             output_prefix=base_prefix,
         ),
     }
+    if selected_still is not None:
+        bundle["still_image_path"] = selected_still.as_posix()
+    else:
+        bundle["image_workflow"] = build_image_workflow(scene, seed=image_seed, output_prefix=base_prefix)
+    return bundle
 
 
-def write_workflow_bundle(scene_path: Path, destination: Path, *, image_seed: int, video_seed: int) -> Path:
-    bundle = render_workflow_bundle(scene_path, image_seed=image_seed, video_seed=video_seed)
+def write_workflow_bundle(
+    scene_path: Path,
+    destination: Path,
+    *,
+    image_seed: int,
+    video_seed: int,
+    still_image: Path | None = None,
+) -> Path:
+    bundle = render_workflow_bundle(scene_path, image_seed=image_seed, video_seed=video_seed, still_image=still_image)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
     return destination
@@ -543,17 +570,27 @@ def run_scene_generation(
     video_seed: int = 202,
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
     poll_interval: float = DEFAULT_POLL_INTERVAL,
+    still_image: Path | None = None,
 ) -> dict[str, Path]:
     scene = load_scene_config(scene_path)
     base_prefix = f"{scene['scene']['id']}_{scene['scene']['slug']}"
     active_client = client or ComfyUIClient()
+    selected_still = _resolve_still_image(scene, still_image)
+    result: dict[str, Path] = {}
 
-    image_workflow = build_image_workflow(scene, seed=image_seed, output_prefix=base_prefix)
-    image_prompt_id = active_client.queue_prompt(image_workflow, client_id=client_id)
-    image_history = active_client.wait_for_history(image_prompt_id, timeout_sec=timeout_sec, poll_interval=poll_interval)
-    image_artifact = _select_first_artifact(extract_output_files(image_history, image_prompt_id), kind="image")
-    image_destination = output_dir / "image" / image_artifact.filename
-    local_image = active_client.download_output(image_artifact, image_destination)
+    if selected_still is None:
+        image_workflow = build_image_workflow(scene, seed=image_seed, output_prefix=base_prefix)
+        image_prompt_id = active_client.queue_prompt(image_workflow, client_id=client_id)
+        image_history = active_client.wait_for_history(image_prompt_id, timeout_sec=timeout_sec, poll_interval=poll_interval)
+        image_artifact = _select_first_artifact(extract_output_files(image_history, image_prompt_id), kind="image")
+        image_destination = output_dir / "image" / image_artifact.filename
+        local_image = active_client.download_output(image_artifact, image_destination)
+        result["image"] = local_image
+    else:
+        if not selected_still.exists():
+            raise FileNotFoundError(f"External still image was not found: {selected_still}")
+        local_image = selected_still
+        result["still_image"] = local_image
 
     uploaded_name = active_client.upload_image(local_image)
 
@@ -569,10 +606,8 @@ def run_scene_generation(
     video_destination = output_dir / "loop" / video_artifact.filename
     local_video = active_client.download_output(video_artifact, video_destination)
 
-    return {
-        "image": local_image,
-        "video": local_video,
-    }
+    result["video"] = local_video
+    return result
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -580,6 +615,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scene", type=Path, required=True, help="Path to the scene YAML file.")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR, help="Download directory for generated assets.")
     parser.add_argument("--write-template", type=Path, default=None, help="Write a workflow bundle JSON to this path.")
+    parser.add_argument("--still-image", type=Path, default=None, help="External still image path. Skips SDXL still generation when provided.")
     parser.add_argument("--image-seed", type=int, default=101, help="Seed for the SDXL still image.")
     parser.add_argument("--video-seed", type=int, default=202, help="Seed for the Wan loop generation.")
     parser.add_argument("--client-id", type=str, default=DEFAULT_CLIENT_ID, help="ComfyUI client id.")
@@ -593,7 +629,13 @@ def main() -> None:
     args = build_parser().parse_args()
     template_path = args.write_template
     if template_path is not None:
-        write_workflow_bundle(args.scene, template_path, image_seed=args.image_seed, video_seed=args.video_seed)
+        write_workflow_bundle(
+            args.scene,
+            template_path,
+            image_seed=args.image_seed,
+            video_seed=args.video_seed,
+            still_image=args.still_image,
+        )
         print(template_path)
     if args.dry_run:
         return
@@ -605,6 +647,7 @@ def main() -> None:
         video_seed=args.video_seed,
         timeout_sec=args.timeout_sec,
         poll_interval=args.poll_interval,
+        still_image=args.still_image,
     )
     print(json.dumps({key: value.as_posix() for key, value in result.items()}, ensure_ascii=False, indent=2))
 
